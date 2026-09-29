@@ -1,0 +1,5 @@
+.tools/
+build/
+.DS_Store
+/docs/
+node_modules/
