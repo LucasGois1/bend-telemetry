@@ -4,8 +4,11 @@ OpenTelemetry tracing for [Bend](https://github.com/bendlang/bend): a tracing
 API, an SDK, an OTLP exporter, HTTP instrumentation and semantic conventions,
 written in Bend and published on BendHub.
 
-**Status: planning.** Nothing is published yet. This is a community project;
-it is not part of, or endorsed by, the OpenTelemetry project.
+**Status: in development.** Nothing is published yet. The repository's
+toolchain is in place; the packages follow their specifications in the
+[issues](https://github.com/LucasGois1/bend-telemetry/issues). This is a
+community project; it is not part of, or endorsed by, the OpenTelemetry
+project.
 
 ## Scope
 
@@ -30,6 +33,54 @@ All packages share one version and are released together; see
 The decisions behind this layout are in
 [#1](https://github.com/LucasGois1/bend-telemetry/issues/1). Specifications
 and decisions live in the [issues](https://github.com/LucasGois1/bend-telemetry/issues).
+
+## Using a package
+
+A program imports a package by its BendHub name and version, never by a
+relative path: in Bend, each version of a package is a distinct type, and a
+relative import bundles a private copy whose types do not match. Today the
+API package is a skeleton; this example is the one the repository tests
+against a clean checkout, served by the local hub described in
+[CONTRIBUTING.md](CONTRIBUTING.md):
+
+<!-- test:readme-bend:start -->
+```bend
+import Base
+import bend-telemetry-api@0.1.0.0/api.bend as Api
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    IO.print(Api.Package.name())
+    IO.print(String.join(Api.TraceContext.fields(), ","))
+```
+<!-- test:readme-bend:end -->
+
+It prints:
+
+<!-- test:readme-bend-output:start -->
+```text
+bend-telemetry-api
+traceparent,tracestate
+```
+<!-- test:readme-bend-output:end -->
+
+## Toolchain
+
+The repository pins one exact Bend release, the one that its
+bend-trace-context version pins (2.0.34 for bend-trace-context 0.2.0).
+`./scripts/setup-bend.sh` installs it under `.tools/`, verified by version,
+release commit and archive SHA-256, and `./bend` runs it. The gates are:
+
+```sh
+./scripts/validate.sh                 # the proof check of every package and the manifests
+./scripts/test-consumer.sh native     # the independent consumer and the README example, natively
+./scripts/test-consumer.sh node       # the same, compiled to JavaScript and run with node
+```
+
+`./scripts/local-hub.sh COMMAND` serves the working tree's packages from a
+local BendHub and runs a command against it, for example
+`./scripts/local-hub.sh ./bend tests/consumer/main.bend`. CONTRIBUTING.md has
+the details, the conventions and the weekly check on the newest Bend release.
 
 ## License
 
