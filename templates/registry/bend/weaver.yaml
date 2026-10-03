@@ -1,0 +1,54 @@
+# The Bend target of weaver: packages/semconv/semconv.bend, the entry module of
+# bend-telemetry-semconv, from the OpenTelemetry semantic conventions registry.
+# scripts/semconv-generate.sh runs it with the pinned weaver on the pinned
+# registry and passes the versions as the parameters semconv_version and
+# weaver_version; packages/semconv/README.md documents the output. The name
+# mapping lives in semconv.bend.j2, and project.bend.j2 holds the values that
+# the registry does not list.
+params:
+  # The root namespaces the package covers (#27): those of HTTP spans and
+  # those of the resource. The attributes of every other namespace are left
+  # out, and the generator fails when a listed namespace has no attributes.
+  namespaces:
+    - client
+    - container
+    - error
+    - exception
+    - host
+    - http
+    - network
+    - os
+    - process
+    - server
+    - service
+    - telemetry
+    - url
+    - user_agent
+
+# Block tags on their own lines leave no trace in the output.
+whitespace_control:
+  trim_blocks: true
+  lstrip_blocks: true
+  keep_trailing_newline: true
+
+# The `comment` filter renders the registry's Markdown as Bend comments, with
+# links as references after the text, as the Go SDK renders them.
+comment_formats:
+  bend:
+    format: markdown
+    prefix: "# "
+    trim: true
+    shortcut_reference_link: true
+    word_wrap:
+      line_length: 78
+default_comment_format: bend
+
+templates:
+  - template: semconv.bend.j2
+    # Every registry attribute, deprecated ones included, grouped by root
+    # namespace and sorted by name, kept to the namespaces above.
+    filter: >
+      semconv_grouped_attributes({"exclude_deprecated": false})
+      | map(select(.root_namespace as $namespace | $namespaces | index($namespace) != null))
+    application_mode: single
+    file_name: semconv.bend

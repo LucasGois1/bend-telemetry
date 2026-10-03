@@ -11,7 +11,8 @@ is the glossary, and its terms are the ones to use.
 ## Requirements
 
 - Git, a POSIX shell, curl, tar and a SHA-256 tool (`sha256sum` or
-  `shasum`).
+  `shasum`); `unzip` and an xz-capable `tar` for the semantic conventions
+  generator.
 - Clang 14 or later for native builds (`CC` names another C compiler).
 - Node 22 or later, for the local hub and the JavaScript lane's compiled
   programs.
@@ -37,6 +38,7 @@ Every pull request must pass:
 ./scripts/validate.sh
 ./scripts/test-consumer.sh native
 ./scripts/test-consumer.sh node
+./scripts/semconv-generate.sh --check
 ```
 
 and the quality checks that CI runs, which can be run locally as:
@@ -65,9 +67,16 @@ independent consumer (`tests/consumer/`) and README marked example against
 them, directly and compiled; it tests commits, not uncommitted edits.
 Evidence goes under `build/`, which is not tracked.
 
+`semconv-generate.sh --check` regenerates the semantic conventions package
+from the pinned registry with the pinned weaver and fails when the committed
+module differs; `packages/semconv/README.md` describes the generator, the
+pins and how to move to a newer conventions version. The generated module is
+never edited by hand.
+
 CI runs the same gates natively on Linux x86_64 and macOS ARM64 and, for the
 JavaScript lane, on Node 22 and 24 (the first and the current release of
-each line), plus the quality checks above.
+each line), plus the semantic conventions check on Linux and the quality
+checks above.
 
 ## Packages and the local hub
 

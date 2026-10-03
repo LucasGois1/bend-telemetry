@@ -1,0 +1,18 @@
+{#-
+  The values of this project that the registry does not list. This file is
+  written by hand and rendered at the end of semconv.bend by semconv.bend.j2;
+  the generator fails on a collision, so a value that a later registry lists
+  must leave here when the package moves to that version.
+-#}
+# Values of this project that the registry does not list
+# ======================================================
+#
+# These definitions come from templates/registry/bend/project.bend.j2, not
+# from the registry; packages/semconv/README.md explains each one.
+
+# The value of telemetry.sdk.language for a Bend SDK. The registry's members
+# of that attribute, above, do not include Bend at v{{ params.semconv_version }}; the SDK's
+# resource carries this value until the conventions list the language, and
+# the generated member replaces this definition when they do.
+def Telemetry.Sdk.Language.bend() -> String:
+  "bend"

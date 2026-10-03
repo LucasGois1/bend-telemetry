@@ -12,7 +12,7 @@
 #     dependency is imported by some module;
 #   - a LICENSE sits beside the entry module, opening with the SPDX line of
 #     the repository's license and carrying the repository's LICENSE text;
-#   - every `bend-telemetry-<role>@<version>` the README and the tests name
+#   - every `bend-telemetry-<role>@<version>` the READMEs and the tests name
 #     is this repository's version, so that the examples import the package
 #     that the local hub serves.
 set -eu
@@ -66,11 +66,11 @@ for manifest in packages/*/package.json; do
   fi
 done
 
-named=$(grep -h -o -E 'bend-telemetry-[a-z][a-z0-9-]*@[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' README.md tests/consumer/*.bend 2>/dev/null | sort -u || true)
+named=$(grep -h -o -E 'bend-telemetry-[a-z][a-z0-9-]*@[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' README.md packages/*/README.md tests/consumer/*.bend 2>/dev/null | sort -u || true)
 for reference in $named; do
   case "$reference" in
     *"@$hub_version") ;;
-    *) fail "README.md or tests/consumer names $reference; this repository is at $hub_version" ;;
+    *) fail "a README or tests/consumer names $reference; this repository is at $hub_version" ;;
   esac
 done
 

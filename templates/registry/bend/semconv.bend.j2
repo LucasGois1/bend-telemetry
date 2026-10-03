@@ -1,0 +1,143 @@
+{#-
+  The entry module of bend-telemetry-semconv, rendered once over the attribute
+  groups that weaver.yaml selects. scripts/semconv-generate.sh runs weaver
+  with the parameters semconv_version and weaver_version and fails on any
+  `GENERATOR ERROR:` line, on a duplicate definition and on a definition
+  outside the shape `def Name() -> String:`.
+
+  The name mapping, documented in packages/semconv/README.md:
+  - an attribute key splits on `.`; every segment but the last is capitalized
+    (`_` joins the words of a segment: `user_agent` is `UserAgent`,
+    `build_id` is `BuildId`), and the last keeps its snake_case spelling:
+    `http.request.method_original` is `Http.Request.method_original`;
+  - an enumeration member is a def under the attribute's key with every
+    segment capitalized, named after the member's id as written:
+    `http.request.method` member `get` is `Http.Request.Method.get`.
+-#}
+{%- macro capitalized(segment) -%}
+  {%- for piece in segment.split("_") -%}
+    {{- piece | capitalize_first -}}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{%- macro attribute_def(name) -%}
+  {%- for segment in name.split(".") -%}
+    {%- if loop.last -%}
+      {{- segment -}}
+    {%- else -%}
+      {{- capitalized(segment) -}}.
+    {%- endif -%}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{%- macro member_def(attribute_name, member_id) -%}
+  {%- for segment in attribute_name.split(".") -%}
+    {{- capitalized(segment) -}}.
+  {%- endfor -%}
+  {{- member_id -}}
+{%- endmacro -%}
+
+{#- An example is a scalar or a list of scalars; the registry gives one or a
+    list of them. Strings are quoted and escaped, numbers and Booleans bare. -#}
+{%- macro example_text(example) -%}
+  {%- if example is sequence -%}
+    [{% for item in example %}{{ item | print_member_value }}{% if not loop.last %}, {% endif %}{% endfor %}]
+  {%- else -%}
+    {{- example | print_member_value -}}
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- macro examples_text(examples) -%}
+  {%- if examples is sequence -%}
+    {%- for example in examples %}{{ example_text(example) }}{% if not loop.last %}, {% endif %}{% endfor -%}
+  {%- else -%}
+    {{- example_text(examples) -}}
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- macro attribute_text(attribute) -%}
+{{ attribute.brief | trim }}
+
+Type: {% if attribute is enum %}enum{% else %}{{ attribute.type }}{% endif %}. Stability: {{ attribute.stability }}.
+{% if attribute.examples is defined and attribute.examples is not none -%}
+Examples: {{ examples_text(attribute.examples) }}
+{% endif -%}
+{% if attribute.deprecated %}
+
+Deprecated ({{ attribute.deprecated.reason }}): {{ attribute.deprecated.note | trim }}
+{% endif -%}
+{%- endmacro -%}
+
+{%- macro member_text(attribute, member) -%}
+A value of {{ attribute.name }}: {{ (member.brief or member.id) | trim }}
+
+Stability: {{ member.stability }}.
+{% if member.deprecated %}
+
+Deprecated ({{ member.deprecated.reason }}): {{ member.deprecated.note | trim }}
+{% endif -%}
+{%- endmacro -%}
+# bend-telemetry-semconv: the OpenTelemetry semantic conventions v{{ params.semconv_version }} for Bend. Source: https://github.com/LucasGois1/bend-telemetry
+import Base
+{% if params.semconv_version is undefined or params.weaver_version is undefined %}
+GENERATOR ERROR: run weaver through scripts/semconv-generate.sh, which passes --param semconv_version and --param weaver_version
+{% endif %}
+{% for namespace in params.namespaces %}
+{% if namespace not in (ctx | map(attribute="root_namespace")) %}
+GENERATOR ERROR: the registry has no attributes under the namespace {{ namespace }}
+{% endif %}
+{% endfor %}
+
+# The semantic conventions package
+# ================================
+#
+# Generated code: do not edit. weaver {{ params.weaver_version }} rendered this module
+# from the OpenTelemetry semantic conventions registry at v{{ params.semconv_version }} through
+# the Bend target templates/registry/bend; `./scripts/semconv-generate.sh`
+# regenerates it, and CI fails when the committed module differs from the
+# registry (#33).
+#
+# Every definition is a constant: a def with no parameters that answers a
+# String. The attribute `http.request.method` is `Http.Request.method()`,
+# which answers the attribute's name, and each enumeration member of an
+# attribute is a def under the attribute's capitalized name, such as
+# `Http.Request.Method.get()`, which answers the member's value. The
+# namespaces covered and the full name mapping are in
+# packages/semconv/README.md. Deprecated attributes and members are kept,
+# with their deprecation note in the comment.
+
+# The package's BendHub name.
+def Package.name() -> String:
+  "bend-telemetry-semconv"
+
+# The schema URL of the conventions version these constants come from, for
+# resources and instrumentation scopes.
+def Schema.url() -> String:
+  "https://opentelemetry.io/schemas/{{ params.semconv_version }}"
+{% for group in ctx %}
+
+# Namespace: {{ group.root_namespace }}
+# {{ "=" * (11 + group.root_namespace | length) }}
+{% for attribute in group.attributes %}
+
+{{ attribute_text(attribute) | comment }}
+def {{ attribute_def(attribute.name) }}() -> String:
+  "{{ attribute.name }}"
+{% if attribute is enum %}
+{% for member in attribute.type.members %}
+
+{{ member_text(attribute, member) | comment }}
+def {{ member_def(attribute.name, member.id) }}() -> String:
+{% if member.value is not string %}
+GENERATOR ERROR: the member {{ member.id }} of {{ attribute.name }} has a value that is not a string: {{ member.value }}
+{% elif '"' in member.value or '\\' in member.value %}
+GENERATOR ERROR: the member {{ member.id }} of {{ attribute.name }} has a value with a quote or a backslash: {{ member.value }}
+{% else %}
+  "{{ member.value }}"
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+{% include "project.bend.j2" %}
