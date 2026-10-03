@@ -1,0 +1,3 @@
+scanned: tests/lanes/fixtures/imports_unknown.bend
+tests/lanes/fixtures/imports_unknown.bend:2: import ./missing.bend: cannot read tests/lanes/fixtures/missing.bend
+tests/lanes/fixtures/imports_unknown.bend:3: import Elsewhere: not a form of import that the lint follows

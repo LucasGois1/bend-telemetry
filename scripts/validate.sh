@@ -4,6 +4,10 @@
 #   - the proof gate of every package: `PROOF.bend --check-only` prints
 #     "ALL PROOFS CHECK", which Bend prints only when every law holds and
 #     nothing the proofs import relies on `@unsafe` or foreign code;
+#   - the effects of the compiler's Base, which the lane lint must know: each
+#     one is flagged as an effect that waits or reviewed and left alone
+#     (scripts/lint-lanes.sh --base), so that a newer Bend with a new effect
+#     fails here, and in the weekly job, rather than pass unseen;
 #   - the package manifests (scripts/check-package.sh).
 #
 # Evidence goes to build/validation/.
@@ -29,6 +33,9 @@ for proof in packages/*/PROOF.bend; do
   }
   echo "PASS: proofs of $package"
 done
+
+./bend base > "$build_dir/base.txt"
+./scripts/lint-lanes.sh --base "$build_dir/base.txt"
 
 ./scripts/check-package.sh
 echo "PASS: validate"

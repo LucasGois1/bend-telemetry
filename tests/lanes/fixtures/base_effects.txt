@@ -1,0 +1,210 @@
+# The effects of Base in Bend 2.0.34, in the shape that `./bend base` prints
+# them: a def whose body imports the effect's C and JavaScript files. IO.within
+# is built on IO.sleep instead of importing files, so its body here is cut
+# short. scripts/test-lint-lanes.sh feeds this excerpt to
+# `scripts/lint-lanes.sh --base`, and scripts/validate.sh feeds the real
+# output of the pinned compiler.
+
+def IO.print(text: String) -> IO(Unit):
+  import "./effs/print.c"
+  import "./effs/print.js"
+
+def IO.write(text: String) -> IO(Unit):
+  import "./effs/write.c"
+  import "./effs/write.js"
+
+def IO.print_err(text: String) -> IO(Unit):
+  import "./effs/print_err.c"
+  import "./effs/print_err.js"
+
+def IO.get_env(name: String) -> IO(Result<&1, &1, U32 & String, String>):
+  import "./effs/get_env.c"
+  import "./effs/get_env.js"
+
+def IO.args() -> IO(List<String>):
+  import "./effs/args.c"
+  import "./effs/args.js"
+
+def Process.run(program: String, args: List<String>, input: String,
+  max_output: U32, timeout_ms: U32) ->
+  IO(Result<&1, &1, U32 & String, U32 & (String & String)>):
+  import "./effs/process_run.c"
+  import "./effs/process_run.js"
+
+def IO.random_u32() -> IO(Result<&1, &1, U32 & String, U32>):
+  import "./effs/random_u32.c"
+  import "./effs/random_u32.js"
+
+def IO.spawn(-A: Type, act: IO(A)) -> IO(Unit):
+  import "./effs/spawn.c"
+  import "./effs/spawn.js"
+
+def IO.sleep(ms: U32) -> IO(Unit):
+  import "./effs/sleep.c"
+  import "./effs/sleep.js"
+
+def IO.now() -> IO(Nat):
+  import "./effs/now.c"
+  import "./effs/now.js"
+
+def IO.thread_count() -> IO(U32):
+  import "./effs/thread_count.c"
+  import "./effs/thread_count.js"
+
+def Chan.new(-A: Type, room: U32) -> IO(Chan(A)):
+  import "./effs/chan.c"
+  import "./effs/chan.js"
+
+def Chan.send(-A: Type, chan: Chan(A), value: A) -> IO(Bool):
+  import "./effs/chan.c"
+  import "./effs/chan.js"
+
+def Chan.recv(-A: Type, chan: Chan(A)) -> IO(Maybe<&1, A>):
+  import "./effs/chan.c"
+  import "./effs/chan.js"
+
+def Chan.close(-A: Type, chan: Chan(A)) -> IO(Unit):
+  import "./effs/chan.c"
+  import "./effs/chan.js"
+
+def IO.within(-A: Type, ms: U32, act: IO(A)) -> IO(Maybe<&1, A>):
+  IO.sleep(ms)
+
+def File.open(path: String, mode: String) ->
+  IO(Result<&1, &1, U32 & String, File>):
+  import "./effs/file_open.c"
+  import "./effs/file_open.js"
+
+def File.read(file: File, max: U32) ->
+  IO(File & Result<&1, &1, U32 & String, String>):
+  import "./effs/file_read.c"
+  import "./effs/file_read.js"
+
+def File.read_bytes(file: File, max: U32) ->
+  IO(File & Result<&1, &1, U32 & String, List<&2, U32>>):
+  import "./effs/file_read.c"
+  import "./effs/file_read.js"
+
+def File.read_at(file: File, offset: U32, max: U32) ->
+  IO(File & Result<&1, &1, U32 & String, List<&2, U32>>):
+  import "./effs/file_read.c"
+  import "./effs/file_read.js"
+
+def File.size(file: File) ->
+  IO(File & Result<&1, &1, U32 & String, U32>):
+  import "./effs/file_size.c"
+  import "./effs/file_size.js"
+
+def File.write(file: File, data: String) ->
+  IO(File & Result<&1, &1, U32 & String, Unit>):
+  import "./effs/file_write.c"
+  import "./effs/file_write.js"
+
+def File.write_bytes(file: File, data: List<&2, U32>) ->
+  IO(File & Result<&1, &1, U32 & String, Unit>):
+  import "./effs/file_write.c"
+  import "./effs/file_write.js"
+
+def File.close(file: File) -> IO(Unit):
+  import "./effs/file_close.c"
+  import "./effs/file_close.js"
+
+def TCP.listen(host: String, port: U32) -> IO(Result<&1, &1, U32 & String, Listener>):
+  import "./effs/tcp_listen.c"
+  import "./effs/tcp_listen.js"
+
+def TCP.accept(listener: Listener) ->
+  IO(Listener & Result<&1, &1, U32 & String, Socket>):
+  import "./effs/tcp_accept.c"
+  import "./effs/tcp_accept.js"
+
+def TCP.connect(host: String, port: U32) ->
+  IO(Result<&1, &1, U32 & String, Socket>):
+  import "./effs/tcp_connect.c"
+  import "./effs/tcp_connect.js"
+
+def TCP.send(sock: Socket, data: String) ->
+  IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  import "./effs/tcp_send.c"
+  import "./effs/tcp_send.js"
+
+def TCP.recv(sock: Socket, max: U32) ->
+  IO(Socket & Result<&1, &1, U32 & String, String>):
+  import "./effs/tcp_recv.c"
+  import "./effs/tcp_recv.js"
+
+def TCP.send_bytes(sock: Socket, data: List<&2, U32>) ->
+  IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  import "./effs/tcp_send.c"
+  import "./effs/tcp_send.js"
+
+def TCP.recv_bytes(sock: Socket, max: U32) ->
+  IO(Socket & Result<&1, &1, U32 & String, List<&2, U32>>):
+  import "./effs/tcp_recv.c"
+  import "./effs/tcp_recv.js"
+
+def TCP.poll(sock: Socket, max: U32, ms: U32) ->
+  IO(Socket & Result<&1, &1, U32 & String, Maybe<&1, String>>):
+  import "./effs/tcp_poll.c"
+  import "./effs/tcp_poll.js"
+
+def UDP.bind(host: String, port: U32) -> IO(Result<&1, &1, U32 & String, Socket>):
+  import "./effs/udp_bind.c"
+  import "./effs/udp_bind.js"
+
+def UDP.send_to(sock: Socket, host: String, port: U32, data: String) ->
+  IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  import "./effs/udp_send_to.c"
+  import "./effs/udp_send_to.js"
+
+def UDP.recv_from(sock: Socket, max: U32) ->
+  IO(Socket & Result<&1, &1, U32 & String, String & U32 & String>):
+  import "./effs/udp_recv_from.c"
+  import "./effs/udp_recv_from.js"
+
+def UDP.poll(sock: Socket, max: U32) ->
+  IO(Socket & Result<&1, &1, U32 & String, Maybe<&1, String & U32 & String>>):
+  import "./effs/udp_poll.c"
+  import "./effs/udp_poll.js"
+
+def Socket.close(socket: Socket) -> IO(Unit):
+  import "./effs/socket_close.c"
+  import "./effs/socket_close.js"
+
+def Listener.close(listener: Listener) -> IO(Unit):
+  import "./effs/listener_close.c"
+  import "./effs/listener_close.js"
+
+def Window.open(title: String, width: U32, height: U32) ->
+  IO(Result<&1, &1, U32 & String, Window>):
+  import "./effs/window.c"
+  import "./effs/window_open.js"
+
+def Window.frame(window: Window, image: Image) ->
+  IO(Window & Image & List<Event>):
+  import "./effs/window.c"
+  import "./effs/window_frame.js"
+
+def Window.set_title(window: Window, title: String) -> IO(Window):
+  import "./effs/window.c"
+  import "./effs/window_set_title.js"
+
+def Window.grab(window: Window, on: Bool) -> IO(Window):
+  import "./effs/window.c"
+  import "./effs/window_grab.js"
+
+def Window.close(window: Window) -> IO(Unit):
+  import "./effs/window.c"
+  import "./effs/window_close.js"
+
+def Audio.open(rate: U32) -> IO(Result<&1, &1, U32 & String, Audio>):
+  import "./effs/audio.c"
+  import "./effs/audio_open.js"
+
+def Audio.write(audio: Audio, samples: List<&2, F32>) -> IO(Audio & U32):
+  import "./effs/audio.c"
+  import "./effs/audio_write.js"
+
+def Audio.close(audio: Audio) -> IO(Unit):
+  import "./effs/audio.c"
+  import "./effs/audio_close.js"

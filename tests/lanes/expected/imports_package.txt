@@ -1,0 +1,5 @@
+scanned: tests/lanes/fixtures/imports_package.bend
+scanned: tests/lanes/fixtures/packages/fixture/fixture.bend
+tests/lanes/fixtures/packages/fixture/fixture.bend:8: Process.run: starts a process: it needs Bun.spawnSync, which only Bun has (reached from tests/lanes/fixtures/imports_package.bend)
+scanned: tests/lanes/fixtures/packages/fixture/src/helper.bend
+tests/lanes/fixtures/packages/fixture/src/helper.bend:7: TCP.connect: uses a socket: it loads bun:ffi, which only Bun has (reached from tests/lanes/fixtures/imports_package.bend)

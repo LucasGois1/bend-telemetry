@@ -1,0 +1,4 @@
+# A list in the format of tests/lanes/programs.txt that puts a program which
+# sleeps on the node lane: a contributor who does that gets a failing lint, not
+# a program that fails on a user's machine.
+sleeper  tests/lanes/fixtures/sleeps.bend  tests/lanes/expected/sleeps.txt  native,javascript,node

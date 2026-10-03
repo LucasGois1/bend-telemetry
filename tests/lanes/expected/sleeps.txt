@@ -1,0 +1,2 @@
+scanned: tests/lanes/fixtures/sleeps.bend
+tests/lanes/fixtures/sleeps.bend:9: IO.sleep: waits on the clock: it loads bun:ffi, which only Bun has

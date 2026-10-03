@@ -1,0 +1,2 @@
+scanned: tests/lanes/fixtures/block.md#slow
+tests/lanes/fixtures/block.md:12: IO.sleep: waits on the clock: it loads bun:ffi, which only Bun has

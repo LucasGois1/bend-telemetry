@@ -1,0 +1,3 @@
+scanned: tests/lanes/fixtures/imports_sleeper.bend
+scanned: tests/lanes/fixtures/sleeper.bend
+tests/lanes/fixtures/sleeper.bend:7: IO.within: waits on the clock: it loads bun:ffi, which only Bun has (reached from tests/lanes/fixtures/imports_sleeper.bend)

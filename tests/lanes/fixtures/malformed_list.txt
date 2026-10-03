@@ -1,0 +1,4 @@
+# Rows that the lint refuses: the first lacks the lanes, the second names a
+# lane that does not exist.
+sleeper  tests/lanes/fixtures/sleeps.bend  tests/lanes/expected/sleeps.txt
+other    tests/lanes/fixtures/sleeps.bend  tests/lanes/expected/sleeps.txt  native,jvm

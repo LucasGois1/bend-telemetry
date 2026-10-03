@@ -1,0 +1,1 @@
+build/quality/lanes/base_new_effect.base:2: Time.sleep: an effect of Base that scripts/lint-lanes.sh neither flags nor has reviewed

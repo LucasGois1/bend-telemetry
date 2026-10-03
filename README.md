@@ -34,6 +34,33 @@ The decisions behind this layout are in
 [#1](https://github.com/LucasGois1/bend-telemetry/issues/1). Specifications
 and decisions live in the [issues](https://github.com/LucasGois1/bend-telemetry/issues).
 
+## Lanes
+
+A lane is a target of the Bend compiler on which a program runs: the native C
+build, or the JavaScript lane. Every package runs on both. Node, which runs
+the JavaScript that `-o x.js` emits, runs only programs with no effect that
+waits, and browsers only pure definitions. The effects that wait are
+`IO.sleep`, `IO.within`, files, TCP and UDP sockets and `Process.run`, and an
+`IO.get_env` of an unset variable fails the same way: they load `bun:ffi`,
+which Node does not have, so a Node program that sleeps fails with
+`Cannot find module 'bun:ffi'`.
+
+| Where | What it is | What runs there |
+| --- | --- | --- |
+| Native | The C build: `bend file.bend -o file` | Every package |
+| JavaScript lane | The Bun embedded in the pinned `bend`, 1.3.14 for Bend 2.0.34 (the version is named for each release). `bend file.bend` runs a program in-process, and a `-o x.js` build runs under a `bun` executable | Every package |
+| Node | `-o x.js` programs with no effect that waits (printing, channels, spawn, the clock, an environment variable that is set) and the pure `-o x.mjs` module | The API and the semantic conventions, and the OTLP encoding core, the propagators and the pure HTTP core as they land; not the SDK's span pipeline, its configuration reader (an unset variable needs `bun:ffi`) or the exporter's transport |
+| Browsers | Pure definitions only, with no Bend IO | Out of scope until [bendlang/bend#1148](https://github.com/bendlang/bend/issues/1148) is resolved |
+
+The matrix is that of the specification
+([#38](https://github.com/LucasGois1/bend-telemetry/issues/38)), and CI checks
+each row as its package lands. No Bun version is claimed beyond the one the
+pinned Bend embeds, and no JavaScript facade is planned. Each package's own
+README states its lanes, as that package's documentation lands. CI runs every
+program of [tests/lanes/programs.txt](tests/lanes/programs.txt) on the lanes
+that the list names for it, and its lint fails when a program on the node lane
+names an effect that waits ([CONTRIBUTING.md](CONTRIBUTING.md#lanes)).
+
 ## Using a package
 
 A program imports a package by its BendHub name and version, never by a
@@ -76,8 +103,9 @@ release commit and archive SHA-256, and `./bend` runs it. The gates are:
 
 ```sh
 ./scripts/validate.sh                 # the proof check of every package and the manifests
-./scripts/test-consumer.sh native     # the independent consumer and the README example, natively
-./scripts/test-consumer.sh node       # the same, compiled to JavaScript and run with node
+./scripts/test-consumer.sh native     # the independent consumer and the README example, in-process and natively
+./scripts/test-consumer.sh node       # the same, in-process and compiled to JavaScript and run with node
+./scripts/lint-lanes.sh               # the programs that run under node name no effect that waits
 ```
 
 `./scripts/local-hub.sh COMMAND` serves the working tree's packages from a

@@ -1,0 +1,4 @@
+scanned: tests/lanes/fixtures/foreign_code.bend
+note: not read: tests/lanes/fixtures/foreign_code.bend:7: foreign code: import "./clock.c"
+note: not read: tests/lanes/fixtures/foreign_code.bend:8: foreign code: import "./clock.js"
+PASS: lint-lanes (programs 1, files 1)
