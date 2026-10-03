@@ -68,7 +68,8 @@ relative path: in Bend, each version of a package is a distinct type, and a
 relative import bundles a private copy whose types do not match. The API
 package is in development, section by section of its specification: today
 it holds its pure values (attribute values, attributes, span limits and
-timestamps), its span context and its context; its reference is
+timestamps), its span context and its context, and its spans with their
+pure operations; its reference is
 [packages/api/README.md](packages/api/README.md). This example is the one
 the repository tests against a clean checkout, served by the local
 hub described in [CONTRIBUTING.md](CONTRIBUTING.md):

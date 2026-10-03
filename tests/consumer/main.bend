@@ -16,8 +16,12 @@ import bend-telemetry-semconv@0.1.0.0/semconv.bend as Semconv
 # carrier with the W3C examples of traceparent and tracestate, and a child of
 # the remote one built from its value readers. Each prints every reader. Then
 # a context carries a span context, is copied, replaced, read and cleared.
-# Last, the semantic conventions (#33): attribute names, enumeration values
-# and a deprecated name.
+# Then spans (#6): the start options, a recording span built from the literal
+# identifiers with tight span limits, every pure operation applied to it with
+# the limits at work, its data printed, and a non-recording span that accepts
+# the same operations and keeps nothing. The payload type is Unit: the API
+# never inspects the payload. Last, the semantic conventions (#33): attribute
+# names, enumeration values and a deprecated name.
 
 # The cells of a bytes value, in decimal.
 def show_cells(cells: List<&2, U32>) -> List<&2, String>:
@@ -217,6 +221,208 @@ def replacing(context: Api.Context, found: Maybe<&2, Api.SpanContext>) -> Api.Co
     case None{}:
       context
 
+# The instrumentation scope of this consumer, with a version, no schema URL
+# and one attribute.
+def scope() -> Api.InstrumentationScope:
+  Api.InstrumentationScope{"bend-telemetry-consumer", Some{"0.1.0"}, None{},
+    Api.Attributes.from_list([Api.Attribute{"tier", Api.StringValue{"test"}}])}
+
+# Tight span limits, so that every limit is seen at work: two attributes of
+# at most eight characters, four events of two attributes, one link of one
+# attribute.
+def limits() -> Api.SpanLimits:
+  Api.SpanLimits{Some{2n}, Some{8n}, Some{4n}, Some{1n}, Some{2n}, Some{1n}}
+
+# The span's start: a literal timestamp and a literal monotonic reading.
+def start() -> Api.Timestamp:
+  Api.Timestamp.from_unix(1700000000n, 0)
+
+# A timestamp within the span, at the given nanoseconds after its start.
+def during(nanoseconds: U32) -> Api.Timestamp:
+  Api.Timestamp.from_unix(1700000000n, nanoseconds)
+
+# Start options as instrumentation would build them: a client span with one
+# initial attribute, a link, an explicit start timestamp and a root
+# indication; links that need a span context come through `linked`.
+def options(links: List<&2, Api.Link>) -> Api.SpanOptions:
+  Api.SpanOptions.with_root(Api.SpanOptions.with_start_timestamp(Api.SpanOptions.with_links(
+    Api.SpanOptions.with_attributes(Api.SpanOptions.with_kind(Api.SpanOptions.default(), Api.Client{}),
+      [Api.Attribute{"peer.service", Api.StringValue{"users"}}]), links), start()), True{})
+
+# A link to a span context, when there is one: the list is empty otherwise,
+# so that the operations that take a list run either way.
+def linked(found: Maybe<&2, Api.SpanContext>, attributes: List<&2, Api.Attribute>) -> List<&2, Api.Link>:
+  match found:
+    case Some{span_context}:
+      [Api.Link.to(span_context, attributes)]
+    case None{}:
+      Nil{}
+
+# The span with one link added to a span context, when there is one.
+def with_link(span: Api.Span<Unit>, found: Maybe<&2, Api.SpanContext>, attributes: List<&2, Api.Attribute>) -> Api.Span<Unit>:
+  match found:
+    case Some{span_context}:
+      Api.Span.add_link(Unit, span, Api.Link.to(span_context, attributes))
+    case None{}:
+      span
+
+# The recording span of a server request, as an SDK's start slot builds it:
+# its span context is the child of the remote one, its parent the remote one.
+# When the identifiers did not parse, a non-recording span without a span
+# context stands in, and the output says so.
+def recording(span_context: Maybe<&2, Api.SpanContext>, parent: Maybe<&2, Api.SpanContext>) -> Api.Span<Unit>:
+  match span_context:
+    case Some{own}:
+      Api.Span.recording(Unit, Unit{}, scope(), own, parent, "GET /users/{id}", Api.Server{}, start(), 10n, True{}, limits())
+    case None{}:
+      Api.Span.non_recording(Unit, None{})
+
+# Every pure operation applied in turn, with the limits at work: the second
+# attribute set replaces the first in place and the third is dropped; the
+# link keeps one attribute and the second link is dropped; ok is set and a
+# later error is ignored; the name is updated; four events are kept, each
+# with at most two attributes, and the two of the list are dropped.
+def exercise(span: Api.Span<Unit>, remote: Maybe<&2, Api.SpanContext>, local: Maybe<&2, Api.SpanContext>) -> Api.Span<Unit>:
+  span = Api.Span.set_attribute(Unit, span, "http.request.method", Api.StringValue{"GET"})
+  span = Api.Span.set_attributes(Unit, span, [
+    Api.Attribute{"http.response.status_code", Api.IntValue{Api.Int64.from_u32(200)}},
+    Api.Attribute{"http.request.method", Api.StringValue{"DELETE"}},
+    Api.Attribute{"url.full", Api.StringValue{"https://example.com/users/42"}}])
+  span = with_link(span, remote, [
+    Api.Attribute{"peer.service", Api.StringValue{"queue-service"}},
+    Api.Attribute{"messaging.system", Api.StringValue{"kafka"}}])
+  span = Api.Span.add_links(Unit, span, linked(local, Nil{}))
+  span = Api.Span.set_status(Unit, span, Api.Ok{})
+  span = Api.Span.set_status(Unit, span, Api.Error{"late"})
+  span = Api.Span.update_name(Unit, span, "GET /users/{id}/profile")
+  span = Api.Span.add_event_at(Unit, span, "cache.miss", [
+    Api.Attribute{"cache.key", Api.StringValue{"user:42"}},
+    Api.Attribute{"cache.level", Api.IntValue{Api.Int64.from_u32(1)}},
+    Api.Attribute{"cache.hit", Api.BoolValue{False{}}}], during(250000000))
+  span = Api.Span.record_exception_with(Unit, span, "TimeoutError", "upstream timed out",
+    [Api.Attribute{"exception.escaped", Api.BoolValue{True{}}}], during(900000000))
+  span = Api.Span.record_exception(Unit, span, "TimeoutError", "upstream timed out", during(950000000))
+  span = Api.Span.add_event(Unit, span,
+    Api.SpanEvent.at_offset("retry", [Api.Attribute{"attempt", Api.IntValue{Api.Int64.from_u32(1)}}], 15n))
+  Api.Span.add_events(Unit, span, [Api.SpanEvent.at("done", Nil{}, Api.Timestamp.from_unix(1700000001n, 0)),
+    Api.SpanEvent.at_offset("closed", Nil{}, 20n)])
+
+# The name of a kind.
+def show_kind(kind: Api.SpanKind) -> String:
+  match kind:
+    case Api.Internal{}:
+      "Internal"
+    case Api.Server{}:
+      "Server"
+    case Api.Client{}:
+      "Client"
+    case Api.Producer{}:
+      "Producer"
+    case Api.Consumer{}:
+      "Consumer"
+
+# A status, with its description when it is an error.
+def show_status(status: Api.Status) -> String:
+  match status:
+    case Api.Unset{}:
+      "Unset"
+    case Api.Ok{}:
+      "Ok"
+    case Api.Error{description}:
+      "Error(" ++ description ++ ")"
+
+# When an event happened: an explicit timestamp, or an offset from the
+# span's start reading.
+def show_time(time: Api.EventTime) -> String:
+  match time:
+    case Api.AtTimestamp{timestamp}:
+      show_timestamp(timestamp)
+    case Api.AtOffset{milliseconds}:
+      "+" ++ Nat.show(milliseconds) ++ "ms"
+
+# A text as it is.
+def same(text: String) -> String:
+  text
+
+# Start options: the kind, how many attributes and links, the start
+# timestamp and the root indication.
+def show_options(+options: Api.SpanOptions) -> String:
+  "kind=" ++ show_kind(Api.SpanOptions.kind(options))
+    ++ " attributes=" ++ Nat.show(List.length(&2, Api.Attribute, Api.SpanOptions.attributes(options)))
+    ++ " links=" ++ Nat.show(List.length(&2, Api.Link, Api.SpanOptions.links(options)))
+    ++ " start=" ++ Maybe.show(~&2, ~Api.Timestamp, ~(timestamp => show_timestamp(timestamp)), Api.SpanOptions.start_timestamp(options))
+    ++ " root=" ++ Bool.show(Api.SpanOptions.is_root(options))
+
+# The counts of span data on one line: the kind, the status and how many
+# attributes, events and links it keeps.
+def show_counts(+data: Api.SpanData) -> String:
+  "kind=" ++ show_kind(Api.SpanData.kind(data)) ++ " status=" ++ show_status(Api.SpanData.status(data))
+    ++ " attributes=" ++ Nat.show(Api.Attributes.count(Api.SpanData.attributes(data)))
+    ++ " events=" ++ Nat.show(List.length(&2, Api.SpanEvent, Api.SpanData.events(data)))
+    ++ " links=" ++ Nat.show(List.length(&2, Api.Link, Api.SpanData.links(data)))
+
+# The readers of a span on one line: whether it is recording, its name and
+# the counts of its data.
+def summary(+span: Api.Span<Unit>) -> String:
+  "recording=" ++ Bool.show(Api.Span.is_recording(Unit, span))
+    ++ " name=" ++ Maybe.show(~&2, ~String, ~same, Api.Span.name(Unit, span))
+    ++ " data=" ++ Maybe.show(~&2, ~Api.SpanData, ~(data => show_counts(data)), Api.Span.data(Unit, span))
+
+# An instrumentation scope: every reader.
+def show_scope(+scope: Api.InstrumentationScope) -> String:
+  Api.InstrumentationScope.name(scope)
+    ++ " version=" ++ Maybe.show(~&2, ~String, ~same, Api.InstrumentationScope.version(scope))
+    ++ " schema_url=" ++ Maybe.show(~&2, ~String, ~same, Api.InstrumentationScope.schema_url(scope))
+    ++ " attributes=" ++ show_collection(Api.InstrumentationScope.attributes(scope))
+
+# Each event on its own line: its name, when it happened and its attributes.
+def show_events(events: List<&2, Api.SpanEvent>) -> List<&2, String>:
+  match events:
+    case Nil{}:
+      Nil{}
+    case Con{+event, rest}:
+      Con{"event: " ++ Api.SpanEvent.name(event) ++ " at " ++ show_time(Api.SpanEvent.time(event)) ++ ": "
+        ++ show_collection(Api.SpanEvent.attributes(event)), show_events(rest)}
+
+# Each link on its own line: the span context it points to and its
+# attributes.
+def show_links(links: List<&2, Api.Link>) -> List<&2, String>:
+  match links:
+    case Nil{}:
+      Nil{}
+    case Con{+link, rest}:
+      Con{"link: " ++ describe(Some{Api.Link.span_context(link)}) ++ ": " ++ show_collection(Api.Link.attributes(link)),
+        show_links(rest)}
+
+# The limits a span enforces: each count and the value length.
+def show_limits(+limits: Api.SpanLimits) -> String:
+  "attributes " ++ Maybe.show(~&2, ~Nat, ~Nat.show, Api.SpanLimits.attribute_count(limits))
+    ++ ", length " ++ Maybe.show(~&2, ~Nat, ~Nat.show, Api.SpanLimits.attribute_value_length(limits))
+    ++ ", events " ++ Maybe.show(~&2, ~Nat, ~Nat.show, Api.SpanLimits.event_count(limits))
+    ++ ", links " ++ Maybe.show(~&2, ~Nat, ~Nat.show, Api.SpanLimits.link_count(limits))
+    ++ ", per event " ++ Maybe.show(~&2, ~Nat, ~Nat.show, Api.SpanLimits.attribute_per_event_count(limits))
+    ++ ", per link " ++ Maybe.show(~&2, ~Nat, ~Nat.show, Api.SpanLimits.attribute_per_link_count(limits))
+
+# The data of a span, one line per fact, as an SDK's end slot would read it;
+# one line saying so when the span keeps none.
+def show_data(found: Maybe<&2, Api.SpanData>) -> List<&2, String>:
+  match found:
+    case None{}:
+      ["data: none"]
+    case Some{+data}:
+      List.concat(&2, String, [
+        ["span context: " ++ describe(Some{Api.SpanData.span_context(data)}),
+          "parent: " ++ describe(Api.SpanData.parent(data)),
+          "scope: " ++ show_scope(Api.SpanData.scope(data)),
+          "start: " ++ show_timestamp(Api.SpanData.start_timestamp(data)) ++ ", reading "
+            ++ Nat.show(Api.SpanData.start_reading(data)) ++ "ms, sampled " ++ Bool.show(Api.SpanData.is_sampled(data)),
+          "attributes: " ++ show_collection(Api.SpanData.attributes(data))],
+        show_events(Api.SpanData.events(data)),
+        ["dropped events: " ++ Nat.show(Api.SpanData.dropped_events(data))],
+        show_links(Api.SpanData.links(data)),
+        ["dropped links: " ++ Nat.show(Api.SpanData.dropped_links(data)),
+          "limits: " ++ show_limits(Api.SpanData.limits(data))]])
+
 def main() -> IO(Unit):
   do IO<Unit>:
     IO.print("package: " ++ Api.Package.name())
@@ -269,6 +475,22 @@ def main() -> IO(Unit):
     IO.print("replaced: " ++ describe(Api.Context.span_context(replacing(context, remote))))
     IO.print("empty: " ++ describe(Api.Context.span_context(Api.Context.empty())))
     IO.print("cleared: " ++ describe(Api.Context.span_context(Api.Context.clear_span_context(context))))
+    IO.print("options: " ++ show_options(Api.SpanOptions.default()))
+    IO.print("options: " ++ show_options(options(linked(remote, Nil{}))))
+    # The span is Data: marked reusable, each state below is read and kept.
+    +started : Api.Span<Unit> = recording(child(remote, span_id()), remote)
+    IO.print("started: " ++ summary(started))
+    +failed : Api.Span<Unit> = Api.Span.set_status(Unit, started, Api.Error{"upstream timed out"})
+    IO.print("failed: " ++ summary(failed))
+    +recorded : Api.Span<Unit> = exercise(failed, remote, local)
+    IO.print("recorded: " ++ summary(recorded))
+    IO.print(String.join(show_data(Api.Span.data(Unit, recorded)), "\n"))
+    +quiet : Api.Span<Unit> = exercise(Api.Span.non_recording(Unit, remote), remote, local)
+    IO.print("non-recording: " ++ summary(quiet))
+    IO.print("non-recording span context: " ++ describe(Api.Span.span_context(Unit, quiet)))
+    +orphan : Api.Span<Unit> = exercise(Api.Span.non_recording(Unit, None{}), remote, local)
+    IO.print("non-recording without parent: " ++ summary(orphan) ++ ", span context "
+      ++ describe(Api.Span.span_context(Unit, orphan)))
     IO.print("package: " ++ Semconv.Package.name())
     IO.print("schema: " ++ Semconv.Schema.url())
     IO.print(Semconv.Http.Request.method() ++ " = " ++ Semconv.Http.Request.Method.get())

@@ -8,6 +8,7 @@ import ./proofs/values.bend as ValuesProof
 import ./proofs/attributes.bend as AttributesProof
 import ./proofs/limits.bend as LimitsProof
 import ./proofs/timestamps.bend as TimestampsProof
+import ./proofs/spans.bend as SpansProof
 
 # Proofs of the laws of bend-telemetry-api
 # ========================================
@@ -49,6 +50,7 @@ import ./proofs/timestamps.bend as TimestampsProof
 #   proofs/attributes.bend   the attribute collection
 #   proofs/limits.bend       attributes under span limits
 #   proofs/timestamps.bend   timestamps
+#   proofs/spans.bend        events and links under span limits
 
 # 1. Package
 # ==========
@@ -304,3 +306,227 @@ def Laws.context_cleared(context):
   match context:
     case Api.Context{previous}:
       {==}
+
+# 10. Instrumentation scope
+# =========================
+
+# By computation: each reader opens the record the constructor built.
+def Laws.scope_readers(name, version, schema_url, attributes):
+  ({==}, ({==}, ({==}, {==})))
+
+# 11. Span options
+# ================
+
+def Laws.default_options():
+  ({==}, ({==}, ({==}, ({==}, {==}))))
+
+# Opening the record shows that each with_ operation replaces its field,
+# whatever it was.
+def Laws.options_set_then_read(options, kind, attributes, links, timestamp, root):
+  match options:
+    case Api.SpanOptions{previous_kind, previous_attributes, previous_links, previous_timestamp, previous_root}:
+      ({==}, ({==}, ({==}, ({==}, {==}))))
+
+# 12. Status
+# ==========
+
+def Laws.status_description(description):
+  ({==}, ({==}, {==}))
+
+def Laws.status_after(status, description):
+  ({==}, ({==}, {==}))
+
+def Laws.status_set(data, status):
+  match data:
+    case Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, current, limits}:
+      {==}
+
+# A non-recording span is unchanged by both sets. For a recording span the
+# data is opened and its status examined: whatever it was, the first set
+# leaves ok, and the second set over ok leaves ok.
+def Laws.ok_final(P, span, status):
+  match span:
+    case Api.Recording{payload, Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, current, limits}}:
+      match current:
+        case Api.Unset{}:
+          {==}
+        case Api.Ok{}:
+          {==}
+        case Api.Error{description}:
+          {==}
+    case Api.NonRecording{span_context}:
+      {==}
+
+# 13. Events and links
+# ====================
+
+def Laws.event_readers(name, attributes, timestamp, milliseconds):
+  ({==}, ({==}, ({==}, ({==}, ({==}, {==})))))
+
+def Laws.link_readers(span_context, attributes):
+  ({==}, {==})
+
+# By computation: the two keys are literals, so the lookups compare them
+# character by character.
+def Laws.exception_event(type_name, message, timestamp):
+  ({==}, ({==}, ({==}, {==})))
+
+def Laws.exception_with_event(type_name, message, extras, timestamp):
+  ({==}, {==})
+
+def Laws.attributes_within(limits, attributes):
+  match attributes:
+    case Api.Attributes{entries, dropped}:
+      {==}
+
+def Laws.within_event_and_link(limits, name, attributes, time, span_context):
+  ({==}, {==})
+
+def Laws.event_limits_literal():
+  ({==}, ({==}, ({==}, {==})))
+
+# 14. Spans
+# =========
+
+# By computation: each reader opens the record SpanData.new built.
+def Laws.new_data_readers(scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, limits):
+  ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, {==}))))))))))))))
+
+def Laws.recording_readers(P, payload, scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, limits):
+  ({==}, ({==}, ({==}, {==})))
+
+def Laws.non_recording_readers(P, span_context):
+  ({==}, ({==}, ({==}, {==})))
+
+# By computation: each operation matches the constructor it is applied to.
+def Laws.recording_delegates(P, payload, data, key, value, entries, link, links, status, name, event, events):
+  ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, {==})))))))
+
+def Laws.non_recording_identity(P, span_context, key, value, entries, link, links, status, name, event, events, event_name,
+  attributes, timestamp, type_name, message, extras):
+  ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, {==}))))))))))
+
+# Opening the data shows the attributes set under the span's limits.
+def Laws.span_attribute_rules(data, key, value, entries):
+  match data:
+    case Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      ({==}, {==})
+
+# The data is opened so that the fold of Attributes.set_all_within unfolds
+# one step on both sides.
+def Laws.set_attributes_fold(P, span, key, value, rest):
+  match span:
+    case Api.Recording{payload, Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}}:
+      ({==}, {==})
+    case Api.NonRecording{span_context}:
+      ({==}, {==})
+
+def Laws.update_name_replaces(P, payload, data, name):
+  match data:
+    case Api.SpanData{scope, span_context, parent, previous, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      ({==}, {==})
+
+# The data is opened, and the span's room check is passed to the lemma as
+# the Bool it decides on, with its value under the law's hypotheses
+# (proofs/spans.bend).
+def Laws.event_added(limit, data, event, limited, room):
+  match data:
+    case Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      +events, +dropped_events, links, dropped_links, status, +limits}:
+      SpansProof.kept_added(Api.SpanEvent, events, Api.SpanEvent.within(Api.SpanLimits.event_attributes(limits), event), dropped_events,
+        Api.Span.room(Api.SpanLimits.event_count(limits), List.length(&2, Api.SpanEvent, events)),
+        Equal.trans(Bool, Api.Span.room(Api.SpanLimits.event_count(limits), List.length(&2, Api.SpanEvent, events)),
+          Nat.is_lt(List.length(&2, Api.SpanEvent, events), limit), True{},
+          SpansProof.room_limited(Api.SpanLimits.event_count(limits), limit, List.length(&2, Api.SpanEvent, events), limited), room))
+
+def Laws.event_dropped(limit, data, event, limited, full):
+  match data:
+    case Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      +events, +dropped_events, links, dropped_links, status, +limits}:
+      SpansProof.kept_dropped(Api.SpanEvent, events, Api.SpanEvent.within(Api.SpanLimits.event_attributes(limits), event), dropped_events,
+        Api.Span.room(Api.SpanLimits.event_count(limits), List.length(&2, Api.SpanEvent, events)),
+        Equal.trans(Bool, Api.Span.room(Api.SpanLimits.event_count(limits), List.length(&2, Api.SpanEvent, events)),
+          Nat.is_lt(List.length(&2, Api.SpanEvent, events), limit), False{},
+          SpansProof.room_limited(Api.SpanLimits.event_count(limits), limit, List.length(&2, Api.SpanEvent, events), limited), full))
+
+def Laws.event_unlimited(data, event, unlimited):
+  match data:
+    case Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      +events, +dropped_events, links, dropped_links, status, +limits}:
+      SpansProof.kept_added(Api.SpanEvent, events, Api.SpanEvent.within(Api.SpanLimits.event_attributes(limits), event), dropped_events,
+        Api.Span.room(Api.SpanLimits.event_count(limits), List.length(&2, Api.SpanEvent, events)),
+        SpansProof.room_unlimited(Api.SpanLimits.event_count(limits), List.length(&2, Api.SpanEvent, events), unlimited))
+
+def Laws.events_bounded(limit, data, event, limited, bound):
+  match data:
+    case Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      +events, dropped_events, links, dropped_links, status, +limits}:
+      SpansProof.kept_bounded(Api.SpanEvent, limit, events, Api.SpanEvent.within(Api.SpanLimits.event_attributes(limits), event),
+        Api.Span.room(Api.SpanLimits.event_count(limits), List.length(&2, Api.SpanEvent, events)),
+        Equal.sym(Bool, Api.Span.room(Api.SpanLimits.event_count(limits), List.length(&2, Api.SpanEvent, events)),
+          Nat.is_lt(List.length(&2, Api.SpanEvent, events), limit),
+          SpansProof.room_limited(Api.SpanLimits.event_count(limits), limit, List.length(&2, Api.SpanEvent, events), limited)),
+        bound)
+
+# By cases on the span: a non-recording span is unchanged on both sides, and
+# on a recording span the fold unfolds one step.
+def Laws.add_events_fold(P, span, event, rest):
+  match span:
+    case Api.Recording{payload, data}:
+      ({==}, {==})
+    case Api.NonRecording{span_context}:
+      ({==}, {==})
+
+def Laws.event_shorthands(P, span, name, attributes, timestamp, type_name, message, extras):
+  ({==}, ({==}, {==}))
+
+def Laws.link_added(limit, data, link, limited, room):
+  match data:
+    case Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, +links, +dropped_links, status, +limits}:
+      SpansProof.kept_added(Api.Link, links, Api.Link.within(Api.SpanLimits.link_attributes(limits), link), dropped_links,
+        Api.Span.room(Api.SpanLimits.link_count(limits), List.length(&2, Api.Link, links)),
+        Equal.trans(Bool, Api.Span.room(Api.SpanLimits.link_count(limits), List.length(&2, Api.Link, links)),
+          Nat.is_lt(List.length(&2, Api.Link, links), limit), True{},
+          SpansProof.room_limited(Api.SpanLimits.link_count(limits), limit, List.length(&2, Api.Link, links), limited), room))
+
+def Laws.link_dropped(limit, data, link, limited, full):
+  match data:
+    case Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, +links, +dropped_links, status, +limits}:
+      SpansProof.kept_dropped(Api.Link, links, Api.Link.within(Api.SpanLimits.link_attributes(limits), link), dropped_links,
+        Api.Span.room(Api.SpanLimits.link_count(limits), List.length(&2, Api.Link, links)),
+        Equal.trans(Bool, Api.Span.room(Api.SpanLimits.link_count(limits), List.length(&2, Api.Link, links)),
+          Nat.is_lt(List.length(&2, Api.Link, links), limit), False{},
+          SpansProof.room_limited(Api.SpanLimits.link_count(limits), limit, List.length(&2, Api.Link, links), limited), full))
+
+def Laws.link_unlimited(data, link, unlimited):
+  match data:
+    case Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, +links, +dropped_links, status, +limits}:
+      SpansProof.kept_added(Api.Link, links, Api.Link.within(Api.SpanLimits.link_attributes(limits), link), dropped_links,
+        Api.Span.room(Api.SpanLimits.link_count(limits), List.length(&2, Api.Link, links)),
+        SpansProof.room_unlimited(Api.SpanLimits.link_count(limits), List.length(&2, Api.Link, links), unlimited))
+
+def Laws.add_links_fold(P, span, link, rest):
+  match span:
+    case Api.Recording{payload, data}:
+      ({==}, {==})
+    case Api.NonRecording{span_context}:
+      ({==}, {==})
+
+def Laws.links_bounded(limit, data, link, limited, bound):
+  match data:
+    case Api.SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, +links, dropped_links, status, +limits}:
+      SpansProof.kept_bounded(Api.Link, limit, links, Api.Link.within(Api.SpanLimits.link_attributes(limits), link),
+        Api.Span.room(Api.SpanLimits.link_count(limits), List.length(&2, Api.Link, links)),
+        Equal.sym(Bool, Api.Span.room(Api.SpanLimits.link_count(limits), List.length(&2, Api.Link, links)),
+          Nat.is_lt(List.length(&2, Api.Link, links), limit),
+          SpansProof.room_limited(Api.SpanLimits.link_count(limits), limit, List.length(&2, Api.Link, links), limited)),
+        bound)
