@@ -1,7 +1,8 @@
 # The required checks of every pull request and of main: quality (shell,
 # workflow and link checks), the gates on the pinned Bend release natively on
-# Linux x86_64 and macOS ARM64, and the JavaScript lane's compiled programs on
-# Node 22 and 24. required-baseline is the one check branch protection needs.
+# Linux x86_64 and macOS ARM64, the JavaScript lane's compiled programs on
+# Node 22 and 24, and the semantic conventions package regenerated from the
+# pinned registry. required-baseline is the one check branch protection needs.
 name: Checks
 
 on:
@@ -140,19 +141,39 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  semconv:
+    name: semconv
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The committed semantic conventions are the generated code
+        run: ./scripts/semconv-generate.sh --check
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: semconv-${{ github.run_id }}
+          path: build/semconv/
+          if-no-files-found: error
+          retention-days: 14
+
   required-baseline:
     name: required-baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: always()
-    needs: [quality, native, node]
+    needs: [quality, native, node, semconv]
     steps:
       - name: Every required job succeeded
         run: |
           test "$QUALITY_RESULT" = success
           test "$NATIVE_RESULT" = success
           test "$NODE_RESULT" = success
+          test "$SEMCONV_RESULT" = success
         env:
           QUALITY_RESULT: ${{ needs.quality.result }}
           NATIVE_RESULT: ${{ needs.native.result }}
           NODE_RESULT: ${{ needs.node.result }}
+          SEMCONV_RESULT: ${{ needs.semconv.result }}

@@ -1,0 +1,11 @@
+{
+  "name": "bend-telemetry-semconv",
+  "version": "0.1.0-dev",
+  "description": "OpenTelemetry semantic conventions for Bend: attribute names, enumeration values and the schema URL, generated with weaver",
+  "license": "Apache-2.0",
+  "private": true,
+  "bend": {
+    "entry": "semconv.bend",
+    "dependencies": {}
+  }
+}

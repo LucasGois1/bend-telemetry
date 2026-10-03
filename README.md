@@ -28,7 +28,7 @@ All packages share one version and are released together; see
 | `bend-telemetry-sdk` | The tracing SDK: sampling, span processing, resources, and the standard-output and in-memory exporters |
 | `bend-telemetry-exporter-otlp` | Export to an OTLP endpoint |
 | `bend-telemetry-instrumentation-http` | Spans and context propagation for HTTP on bend-kit |
-| `bend-telemetry-semconv` | Semantic convention attribute names |
+| `bend-telemetry-semconv` | Semantic conventions v1.44.0: attribute names, enumeration values and the schema URL, generated with weaver ([README](packages/semconv/README.md)) |
 
 The decisions behind this layout are in
 [#1](https://github.com/LucasGois1/bend-telemetry/issues/1). Specifications

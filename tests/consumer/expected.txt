@@ -8,3 +8,13 @@ context: trace_id=0af7651916cd43dd8448eb211c80319c span_id=b7ad6b7169203331 samp
 replaced: trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7 sampled=True tracestate="congo=t61rcWkgMzE,rojo=00f067aa0ba902b7" remote=True
 empty: none
 cleared: none
+package: bend-telemetry-semconv
+schema: https://opentelemetry.io/schemas/1.44.0
+http.request.method = GET
+http.response.status_code
+url.full
+server.address
+error.type = _OTHER
+service.name
+telemetry.sdk.language = bend
+deprecated: http.method

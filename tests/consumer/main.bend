@@ -1,12 +1,13 @@
 import Base
 import bend-telemetry-api@0.1.0.0/api.bend as Api
 import bend-trace-context@0.2.0.0/trace_context.bend as TC
+import bend-telemetry-semconv@0.1.0.0/semconv.bend as Semconv
 
 # The independent consumer: an application that depends on the published
-# package by its BendHub name and version, as every adopter will. This file
-# belongs to the application, not to the package; scripts/test-consumer.sh
-# runs it against a clean clone served by the local hub and compares its
-# output with expected.txt.
+# packages by their BendHub names and versions, as every adopter will. This
+# file belongs to the application, not to the packages;
+# scripts/test-consumer.sh runs it against a clean clone served by the local
+# hub and compares its output with expected.txt.
 #
 # Span contexts (#5): a local one from literal identifiers through
 # bend-trace-context's pure constructors, a remote one extracted from a
@@ -120,3 +121,13 @@ def main() -> IO(Unit):
     IO.print("replaced: " ++ describe(Api.Context.span_context(replacing(context, remote))))
     IO.print("empty: " ++ describe(Api.Context.span_context(Api.Context.empty())))
     IO.print("cleared: " ++ describe(Api.Context.span_context(Api.Context.clear_span_context(context))))
+    IO.print("package: " ++ Semconv.Package.name())
+    IO.print("schema: " ++ Semconv.Schema.url())
+    IO.print(Semconv.Http.Request.method() ++ " = " ++ Semconv.Http.Request.Method.get())
+    IO.print(Semconv.Http.Response.status_code())
+    IO.print(Semconv.Url.full())
+    IO.print(Semconv.Server.address())
+    IO.print(Semconv.Error.type() ++ " = " ++ Semconv.Error.Type.other())
+    IO.print(Semconv.Service.name())
+    IO.print(Semconv.Telemetry.Sdk.language() ++ " = " ++ Semconv.Telemetry.Sdk.Language.bend())
+    IO.print("deprecated: " ++ Semconv.Http.method())
