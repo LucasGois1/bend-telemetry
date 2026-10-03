@@ -1,5 +1,19 @@
 package: bend-telemetry-api
 fields: traceparent, tracestate
+int64: 9223372036854775807 -9223372036854775808 -1 4294967296 1700000000000
+int64 read: Some(-70000) None
+double: 1.5 Some(0.1) None
+bytes: bytes[0, 127, 255] None
+strings: ['a', 'b'] nested: [['c'], ?]
+attributes: http.request.method='GET', http.response.status_code=200, retries=[1, -2], ok=True, ratio=0.5; dropped 0
+get: [1, -2] None
+replaced: http.request.method='POST', http.response.status_code=200, retries=[1, -2], ok=True, ratio=0.5; dropped 0
+limited: a='hel', b='hi'; dropped 1
+replaced under limits: a='wor', b='hi'; dropped 1
+array under limits: tags=['alp', 'be']; dropped 0
+default limits: Some(128) attributes, length None, per event Some(128)
+timestamps: 1700000000s 500000000ns; 1700000001s 500000000ns; 1700000000s 500000000ns; 1700000000500ms
+order: LT GT EQ
 local: trace_id=0af7651916cd43dd8448eb211c80319c span_id=b7ad6b7169203331 sampled=False tracestate="" remote=False
 remote: trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7 sampled=True tracestate="congo=t61rcWkgMzE,rojo=00f067aa0ba902b7" remote=True
 remote span_id bytes: 0,240,103,170,11,169,2,183
