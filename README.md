@@ -38,10 +38,11 @@ and decisions live in the [issues](https://github.com/LucasGois1/bend-telemetry/
 
 A program imports a package by its BendHub name and version, never by a
 relative path: in Bend, each version of a package is a distinct type, and a
-relative import bundles a private copy whose types do not match. Today the
-API package is a skeleton; this example is the one the repository tests
-against a clean checkout, served by the local hub described in
-[CONTRIBUTING.md](CONTRIBUTING.md):
+relative import bundles a private copy whose types do not match. The API
+package is in development, section by section of its specification; its
+reference is [packages/api/README.md](packages/api/README.md). This example
+is the one the repository tests against a clean checkout, served by the local
+hub described in [CONTRIBUTING.md](CONTRIBUTING.md):
 
 <!-- test:readme-bend:start -->
 ```bend

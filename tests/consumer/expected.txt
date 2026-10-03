@@ -1,2 +1,10 @@
 package: bend-telemetry-api
 fields: traceparent, tracestate
+local: trace_id=0af7651916cd43dd8448eb211c80319c span_id=b7ad6b7169203331 sampled=False tracestate="" remote=False
+remote: trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7 sampled=True tracestate="congo=t61rcWkgMzE,rojo=00f067aa0ba902b7" remote=True
+remote span_id bytes: 0,240,103,170,11,169,2,183
+child: trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=b7ad6b7169203331 sampled=True tracestate="congo=t61rcWkgMzE,rojo=00f067aa0ba902b7" remote=False
+context: trace_id=0af7651916cd43dd8448eb211c80319c span_id=b7ad6b7169203331 sampled=False tracestate="" remote=False
+replaced: trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7 sampled=True tracestate="congo=t61rcWkgMzE,rojo=00f067aa0ba902b7" remote=True
+empty: none
+cleared: none

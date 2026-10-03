@@ -14,3 +14,11 @@ package skeleton with its proof gate, the local hub that serves the working
 tree's packages by name and version, the independent consumer, the tested
 README example, and CI natively on Linux and macOS and on Node, with a weekly
 job on the newest Bend release.
+
+`bend-telemetry-api` gains the span context and the explicit context (#5):
+a span context is a remote variant over bend-trace-context's incoming context
+or a local variant over its outgoing context, with readers for the
+identifiers as values and as lowercase hex, the sampled indication, the
+tracestate and the wrapped context; `Context` is a closed record that carries
+an optional span context, with empty, set, read and clear. Absence stands for
+the invalid span context.
