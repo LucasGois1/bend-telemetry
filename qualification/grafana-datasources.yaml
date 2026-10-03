@@ -1,0 +1,11 @@
+# Grafana's one datasource in the qualification harness: Tempo, by its name on
+# the stack's network.
+apiVersion: 1
+datasources:
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    isDefault: true
+    editable: false

@@ -1,0 +1,60 @@
+# The qualification harness's stack: an OpenTelemetry Collector that receives
+# OTLP and writes what it receives to build/qualification/collector/, Grafana
+# Tempo behind it, and Grafana over Tempo. Each image is pinned by tag and by
+# the digest of its multi-architecture index, read from the registry;
+# Dependabot proposes updates. Ports are published on the loopback interface
+# only: Grafana admits anonymous users as Admin, for local use.
+# scripts/qualify.sh drives the stack; qualification/README.md describes it.
+name: bend-telemetry-qualification
+
+services:
+  collector:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.161.0@sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
+    volumes:
+      - ./collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ../build/qualification/collector:/qualification/output
+    ports:
+      - 127.0.0.1:4317:4317
+      - 127.0.0.1:4318:4318
+      - 127.0.0.1:13133:13133
+    depends_on:
+      tempo:
+        condition: service_healthy
+
+  tempo:
+    image: grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
+    command: [-target=all, -config.file=/etc/tempo.yaml]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - 127.0.0.1:3200:3200
+    healthcheck:
+      test: [CMD, /tempo, --health]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+
+  grafana:
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: 'true'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+    volumes:
+      - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/tempo.yaml:ro
+    ports:
+      - 127.0.0.1:3000:3000
+    depends_on:
+      tempo:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --output, /dev/null, http://localhost:3000/api/health]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+
+volumes:
+  tempo-data:

@@ -113,6 +113,10 @@ local BendHub and runs a command against it, for example
 `./scripts/local-hub.sh ./bend tests/consumer/main.bend`. CONTRIBUTING.md has
 the details, the conventions and the weekly check on the newest Bend release.
 
+The qualification harness sends the reference trace through an
+OpenTelemetry Collector into Grafana Tempo and checks what arrives;
+[qualification/README.md](qualification/README.md) describes it.
+
 ## License
 
 [Apache-2.0](LICENSE).

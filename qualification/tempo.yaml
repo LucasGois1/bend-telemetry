@@ -1,0 +1,24 @@
+# Grafana Tempo of the qualification harness, run as one binary
+# (-target=all): an OTLP/HTTP receiver on every interface of its container,
+# which the Collector exports to; traces kept in local storage on the
+# tempo-data volume; the HTTP API on port 3200; and no usage reporting.
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+usage_report:
+  reporting_enabled: false

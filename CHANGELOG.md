@@ -58,3 +58,16 @@ against the compiler's Base, so that a newer Bend with a new effect fails
 until the lint classifies it. CONTRIBUTING writes the job convention for every
 package, and the weekly job on the newest Bend mirrors the native and node
 jobs of CI.
+
+The qualification harness (#49): an OpenTelemetry Collector (contrib
+0.161.0), Grafana Tempo 3.1.0 and Grafana 13.2.3 in
+`qualification/compose.yaml`, pinned by tag and digest and watched by
+Dependabot; the reference trace, one OTLP/JSON export request with a
+resource, an instrumentation scope and three spans that carry every kind of
+attribute value, an event, local and remote links, every status and dropped
+counts; `scripts/qualify.sh up|run|down`, which starts the stack, sends the
+reference trace with curl and stops the stack; and the verifier, tested on
+recorded fixtures, which checks that the Collector wrote the reference trace
+exactly and that Tempo shows its spans, names and parent links. CI runs it
+in the `qualification` job, not yet required; `qualification/README.md`
+describes it.
