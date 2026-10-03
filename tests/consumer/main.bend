@@ -9,11 +9,124 @@ import bend-telemetry-semconv@0.1.0.0/semconv.bend as Semconv
 # scripts/test-consumer.sh runs it against a clean clone served by the local
 # hub and compares its output with expected.txt.
 #
-# Span contexts (#5): a local one from literal identifiers through
+# It prints the pure values of the API (#4): literal 64-bit integers, doubles
+# and bytes, attribute collections with span limits at work, and timestamps.
+# Then span contexts (#5): a local one from literal identifiers through
 # bend-trace-context's pure constructors, a remote one extracted from a
 # carrier with the W3C examples of traceparent and tracestate, and a child of
 # the remote one built from its value readers. Each prints every reader. Then
 # a context carries a span context, is copied, replaced, read and cleared.
+# Last, the semantic conventions (#33): attribute names, enumeration values
+# and a deprecated name.
+
+# The cells of a bytes value, in decimal.
+def show_cells(cells: List<&2, U32>) -> List<&2, String>:
+  match cells:
+    case Nil{}:
+      Nil{}
+    case Con{cell, rest}:
+      Con{U32.show(cell), show_cells(rest)}
+
+# The text of the values this program builds: the primitives and arrays of
+# them, each array's items between brackets, nested arrays included. A
+# key-value list is not among them.
+def show_items(items: List<&2, Api.AttributeValue>) -> String:
+  match items:
+    case Nil{}:
+      ""
+    case Con{Api.StringValue{text}, Nil{}}:
+      "'" ++ text ++ "'"
+    case Con{Api.StringValue{text}, Con{next, rest}}:
+      "'" ++ text ++ "', " ++ show_items(Con{next, rest})
+    case Con{Api.BoolValue{flag}, Nil{}}:
+      Bool.show(flag)
+    case Con{Api.BoolValue{flag}, Con{next, rest}}:
+      Bool.show(flag) ++ ", " ++ show_items(Con{next, rest})
+    case Con{Api.IntValue{integer}, Nil{}}:
+      Api.Int64.show(integer)
+    case Con{Api.IntValue{integer}, Con{next, rest}}:
+      Api.Int64.show(integer) ++ ", " ++ show_items(Con{next, rest})
+    case Con{Api.DoubleValue{double}, Nil{}}:
+      Api.Double.show(double)
+    case Con{Api.DoubleValue{double}, Con{next, rest}}:
+      Api.Double.show(double) ++ ", " ++ show_items(Con{next, rest})
+    case Con{Api.BytesValue{cells}, Nil{}}:
+      "bytes[" ++ String.join(show_cells(cells), ", ") ++ "]"
+    case Con{Api.BytesValue{cells}, Con{next, rest}}:
+      "bytes[" ++ String.join(show_cells(cells), ", ") ++ "], " ++ show_items(Con{next, rest})
+    case Con{Api.ArrayValue{inner}, Nil{}}:
+      "[" ++ show_items(inner) ++ "]"
+    case Con{Api.ArrayValue{inner}, Con{next, rest}}:
+      "[" ++ show_items(inner) ++ "], " ++ show_items(Con{next, rest})
+    case Con{other, Nil{}}:
+      "?"
+    case Con{other, Con{next, rest}}:
+      "?, " ++ show_items(Con{next, rest})
+
+# The text of one value.
+def show_value(value: Api.AttributeValue) -> String:
+  show_items([value])
+
+# An optional value's text, or None.
+def show_maybe_value(value: Maybe<&2, Api.AttributeValue>) -> String:
+  match value:
+    case None{}:
+      "None"
+    case Some{present}:
+      show_value(present)
+
+# Each attribute as key=value.
+def show_attributes(attributes: List<&2, Api.Attribute>) -> List<&2, String>:
+  match attributes:
+    case Nil{}:
+      Nil{}
+    case Con{Api.Attribute{key, value}, rest}:
+      Con{key ++ "=" ++ show_value(value), show_attributes(rest)}
+
+# A collection: its attributes in order, then how many it dropped.
+def show_collection(+attributes: Api.Attributes) -> String:
+  String.join(show_attributes(Api.Attributes.to_list(attributes)), ", ")
+    ++ "; dropped " ++ Nat.show(Api.Attributes.dropped(attributes))
+
+# A timestamp as its seconds and nanoseconds.
+def show_timestamp(+timestamp: Api.Timestamp) -> String:
+  Nat.show(Api.Timestamp.seconds(timestamp)) ++ "s " ++ U32.show(Api.Timestamp.nanoseconds(timestamp)) ++ "ns"
+
+# The name of a comparison.
+def show_cmp(order: Cmp) -> String:
+  match order:
+    case LT{}:
+      "LT"
+    case EQ{}:
+      "EQ"
+    case GT{}:
+      "GT"
+
+# The attributes of a request, as instrumentation would set them: a string,
+# an integer, an array of integers, a Boolean and a double.
+def request_attributes() -> Api.Attributes:
+  Api.Attributes.from_list([
+    Api.Attribute{"http.request.method", Api.StringValue{"GET"}},
+    Api.Attribute{"http.response.status_code", Api.IntValue{Api.Int64.from_u32(200)}},
+    Api.Attribute{"retries", Api.AttributeValue.ints([Api.Int64.from_u32(1), Api.Int64.from_negated_nat(2n)])},
+    Api.Attribute{"ok", Api.BoolValue{True{}}},
+    Api.Attribute{"ratio", Api.DoubleValue{Api.Double.from_f32(0.5)}}])
+
+# Limits of two attributes and three characters, as a span with such limits
+# would enforce them.
+def tight_limits() -> Api.AttributeLimits:
+  Api.AttributeLimits{Some{2n}, Some{3n}}
+
+# Three attributes set under the tight limits: the third is dropped.
+def limited_attributes() -> Api.Attributes:
+  Api.Attributes.set_all_within(tight_limits(), Api.Attributes.empty(), [
+    Api.Attribute{"a", Api.StringValue{"hello"}},
+    Api.Attribute{"b", Api.StringValue{"hi"}},
+    Api.Attribute{"c", Api.StringValue{"x"}}])
+
+# 1700000000500 milliseconds since the epoch, built within Nat's literals.
+def milliseconds() -> Nat:
+  Nat.add(Nat.mul(1700000000n, 1000n), 500n)
 
 # The W3C example identifiers, parsed as bend-trace-context values.
 def trace_id() -> Result<&2, &2, TC.Error, TC.TraceId>:
@@ -108,6 +221,41 @@ def main() -> IO(Unit):
   do IO<Unit>:
     IO.print("package: " ++ Api.Package.name())
     IO.print("fields: " ++ String.join(Api.TraceContext.fields(), ", "))
+    IO.print("int64: " ++ String.join([
+      Api.Int64.show(Api.Int64.from_limbs(2147483647, 4294967295)),
+      Api.Int64.show(Api.Int64.from_limbs(2147483648, 0)),
+      Api.Int64.show(Api.Int64.from_negated_nat(1n)),
+      Api.Int64.show(Api.Int64.from_limbs(1, 0)),
+      Api.Int64.show(Api.Int64.from_nat(Nat.mul(1700000000n, 1000n)))], " "))
+    IO.print("int64 read: " ++ Maybe.show(~&2, ~Api.Int64, ~Api.Int64.show, Api.Int64.read("-70000"))
+      ++ " " ++ Maybe.show(~&2, ~Api.Int64, ~Api.Int64.show, Api.Int64.read("9223372036854775808")))
+    IO.print("double: " ++ Api.Double.show(Api.Double.from_f32(1.5))
+      ++ " " ++ Maybe.show(~&2, ~Api.Double, ~Api.Double.show, Api.Double.read("0.1"))
+      ++ " " ++ Maybe.show(~&2, ~Api.Double, ~Api.Double.show, Api.Double.read("abc")))
+    IO.print("bytes: " ++ show_maybe_value(Api.AttributeValue.bytes([0, 127, 255]))
+      ++ " " ++ show_maybe_value(Api.AttributeValue.bytes([256])))
+    IO.print("strings: " ++ show_value(Api.AttributeValue.strings(["a", "b"]))
+      ++ " nested: " ++ show_value(Api.ArrayValue{[Api.AttributeValue.strings(["c"]), Api.EmptyValue{}]}))
+    IO.print("attributes: " ++ show_collection(request_attributes()))
+    IO.print("get: " ++ show_maybe_value(Api.Attributes.get(request_attributes(), "retries"))
+      ++ " " ++ show_maybe_value(Api.Attributes.get(request_attributes(), "missing")))
+    IO.print("replaced: " ++ show_collection(
+      Api.Attributes.set(request_attributes(), "http.request.method", Api.StringValue{"POST"})))
+    IO.print("limited: " ++ show_collection(limited_attributes()))
+    IO.print("replaced under limits: " ++ show_collection(
+      Api.Attributes.set_within(tight_limits(), limited_attributes(), "a", Api.StringValue{"world"})))
+    IO.print("array under limits: " ++ show_collection(
+      Api.Attributes.set_within(tight_limits(), Api.Attributes.empty(), "tags", Api.AttributeValue.strings(["alpha", "be"]))))
+    IO.print("default limits: " ++ Maybe.show(~&2, ~Nat, ~Nat.show, Api.SpanLimits.attribute_count(Api.SpanLimits.default()))
+      ++ " attributes, length " ++ Maybe.show(~&2, ~Nat, ~Nat.show, Api.SpanLimits.attribute_value_length(Api.SpanLimits.default()))
+      ++ ", per event " ++ Maybe.show(~&2, ~Nat, ~Nat.show, Api.SpanLimits.attribute_per_event_count(Api.SpanLimits.default())))
+    IO.print("timestamps: " ++ show_timestamp(Api.Timestamp.from_unix(1700000000n, 500000000))
+      ++ "; " ++ show_timestamp(Api.Timestamp.from_unix(1700000000n, 1500000000))
+      ++ "; " ++ show_timestamp(Api.Timestamp.from_milliseconds(milliseconds()))
+      ++ "; " ++ Nat.show(Api.Timestamp.milliseconds(Api.Timestamp.from_milliseconds(milliseconds()))) ++ "ms")
+    IO.print("order: " ++ show_cmp(Api.Timestamp.cmp(Api.Timestamp.from_unix(1700000000n, 5), Api.Timestamp.from_unix(1700000000n, 6)))
+      ++ " " ++ show_cmp(Api.Timestamp.cmp(Api.Timestamp.from_unix(1700000001n, 0), Api.Timestamp.from_unix(1700000000n, 999999999)))
+      ++ " " ++ show_cmp(Api.Timestamp.cmp(Api.Timestamp.from_milliseconds(milliseconds()), Api.Timestamp.from_unix(1700000000n, 500000000))))
     +local : Maybe<&2, Api.SpanContext> = local(trace_id(), span_id())
     +remote : Maybe<&2, Api.SpanContext> = remote(TC.Extraction.incoming(TC.Context.extract(TC.Limits.default(),
       carrier(), None{})))
