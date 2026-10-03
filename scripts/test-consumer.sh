@@ -144,7 +144,10 @@ program_list="$clone/tests/lanes/programs.txt"
 grep -v -E '^[[:space:]]*(#|$)' "$program_list" > "$test_dir/list" || true
 : > "$test_dir/programs"
 while read -r name source expected_source lanes extra; do
-  [ -n "$lanes" ] && [ -z "$extra" ] || { echo "tests/lanes/programs.txt: $name has not four columns: name, program, expected, runs-on." >&2; exit 1; }
+  if [ -z "$lanes" ] || [ -n "$extra" ]; then
+    echo "tests/lanes/programs.txt: $name has not four columns: name, program, expected, runs-on." >&2
+    exit 1
+  fi
   materialize "$source" bend "$test_dir/$name.bend"
   materialize "$expected_source" text "$test_dir/$name.expected"
   cp "$test_dir/$name.bend" "$test_dir/$name.expected" "$evidence_dir/"
