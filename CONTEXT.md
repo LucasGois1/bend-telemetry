@@ -134,6 +134,18 @@ _Avoid_: Dispose, stop
 A request that a provider export everything pending within a timeout, without ending it.
 _Avoid_: Sync
 
+**Qualification**:
+The evidence that a release conforms: proved laws, the gates on every lane, and the harness that sends real spans through a collector into a backend and checks what arrives.
+_Avoid_: Certification, benchmark, for the whole
+
+**Qualification harness**:
+The local and CI stack of an OpenTelemetry Collector, Grafana Tempo and Grafana, fed over OTLP, with the verifier that compares what the collector wrote with the reference trace and what Tempo shows with it.
+_Avoid_: Demo, playground
+
+**Reference trace**:
+The one fixed trace, with a resource, an instrumentation scope and spans carrying every kind of attribute, event, link and status, that the harness sends, the encoders must reproduce and the example application emits.
+_Avoid_: Fixture, sample, golden file
+
 **Lane**:
 A target of the Bend compiler on which a program runs: the native C build, or the JavaScript lane, which is the Bun embedded in the pinned compiler. Node runs only programs with no effect that waits; browsers run only pure definitions.
 _Avoid_: Platform, runtime, for the compiler target
