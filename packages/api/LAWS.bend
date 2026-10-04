@@ -65,25 +65,34 @@ import bend-trace-context@0.2.0.0/trace_context.bend as TC
 #   Api.Name                   a definition of the package, from api.bend;
 #                              Api.StringValue{t}, Api.Attribute{k, v} and the
 #                              other constructors build its values.
+#   Api.Recording{p, d}        a recording span with the SDK payload p and the
+#                              span data d; Api.NonRecording{c} a non-recording
+#                              span with the optional span context c. P is the
+#                              payload type, erased (`for -P: Data`).
 #
 # Definitions made in this file with `def` (`key_among`, `keys_distinct`,
-# `cells_fit`, `string_length`, `limited_example`) are independent
-# specifications used to state the laws. They are deliberately not taken
-# from the package, so each law compares the package with a second, simpler
-# description of the rule.
+# `cells_fit`, `string_length`, `limited_example`, `limited_event`) are
+# independent specifications used to state the laws. They are deliberately
+# not taken from the package, so each law compares the package with a second,
+# simpler description of the rule.
 #
 # Contents
 # --------
 #
-#   1. Package            name, context_fields
-#   2. 64-bit integers    int64_limbs ... int64_text_roundtrip
-#   3. Doubles            double_f32, double_text
-#   4. Attribute values   standard_arrays ... bytes_literal
-#   5. Attributes         empty_attributes ... set_all_fold
-#   6. Span limits        default_limits ... truncate_literal
-#   7. Timestamps         timestamp_readers ... timestamp_order
-#   8. Span context      span_context_remote ... hex_readers
-#   9. Context           context_set_then_read ... context_cleared
+#   1. Package                name, context_fields
+#   2. 64-bit integers        int64_limbs ... int64_text_roundtrip
+#   3. Doubles                double_f32, double_text
+#   4. Attribute values       standard_arrays ... bytes_literal
+#   5. Attributes             empty_attributes ... set_all_fold
+#   6. Span limits            default_limits ... truncate_literal
+#   7. Timestamps             timestamp_readers ... timestamp_order
+#   8. Span context           span_context_remote ... hex_readers
+#   9. Context                context_set_then_read ... context_cleared
+#  10. Instrumentation scope  scope_readers
+#  11. Span options           default_options, options_set_then_read
+#  12. Status                 status_description ... ok_final
+#  13. Events and links       event_readers ... event_limits_literal
+#  14. Spans                  new_data_readers ... links_bounded
 
 # 1. Package
 # ==========
@@ -275,7 +284,8 @@ law standard_arrays:
   {Api.AttributeValue.bools([True{}, False{}]) == Api.ArrayValue{[Api.BoolValue{True{}}, Api.BoolValue{False{}}]} : Api.AttributeValue} &
   {Api.AttributeValue.ints([Api.Int64.from_u32(1), Api.Int64.from_negated_nat(2n)]) ==
     Api.ArrayValue{[Api.IntValue{Api.Int64.from_u32(1)}, Api.IntValue{Api.Int64.from_negated_nat(2n)}]} : Api.AttributeValue} &
-  {Api.AttributeValue.doubles([Api.Double.from_f32(1.5)]) == Api.ArrayValue{[Api.DoubleValue{Api.Double.from_f32(1.5)}]} : Api.AttributeValue} &
+  {Api.AttributeValue.doubles([Api.Double.from_f32(1.5)]) ==
+    Api.ArrayValue{[Api.DoubleValue{Api.Double.from_f32(1.5)}]} : Api.AttributeValue} &
   {Api.AttributeValue.strings(Nil{}) == Api.ArrayValue{Nil{}} : Api.AttributeValue}
 
 # Whether every cell is a byte, from 0 to 255: an ordinary walk over the
@@ -907,3 +917,719 @@ law context_cleared:
   for context: Api.Context
   {Api.Context.span_context(Api.Context.clear_span_context(context)) == None{} :
     Maybe<&2, Api.SpanContext>}
+
+# 10. Instrumentation scope
+# =========================
+#
+# The instrumentation scope is a record of the name, the optional version,
+# the optional schema URL and the attributes of the instrumentation that
+# created a span (#6). Its constructor builds it; the readers answer the
+# fields.
+
+# LAW scope_readers
+#   Claim: each reader of an instrumentation scope answers the field it was
+#     built with.
+#   Requirement: OTel Trace API, Get a Tracer: the scope is the name, the
+#     version, the schema URL and the attributes of the instrumentation; #6,
+#     "the instrumentation scope record (name, optional version, optional
+#     schema URL, attributes)".
+#   Why: an exporter writes the scope beside every span of a tracer; a
+#     reader that answered another field would misname the instrumentation.
+#   Proof: Laws.scope_readers, by computation.
+law scope_readers:
+  for +name: String
+  for +version: Maybe<&2, String>
+  for +schema_url: Maybe<&2, String>
+  for +attributes: Api.Attributes
+  {Api.InstrumentationScope.name(Api.InstrumentationScope{name, version, schema_url, attributes}) == name : String} &
+  {Api.InstrumentationScope.version(Api.InstrumentationScope{name, version, schema_url, attributes}) == version : Maybe<&2, String>} &
+  {Api.InstrumentationScope.schema_url(Api.InstrumentationScope{name, version, schema_url, attributes}) == schema_url : Maybe<&2, String>} &
+  {Api.InstrumentationScope.attributes(Api.InstrumentationScope{name, version, schema_url, attributes}) == attributes : Api.Attributes}
+
+# 11. Span options
+# ================
+#
+# The start options are a closed record (#6): the kind, the initial
+# attributes and links, an optional start timestamp and the root indication.
+# The proofs open the record: the laws hold whatever it held before.
+
+# LAW default_options
+#   Claim: the default options ask for an internal span with no initial
+#     attributes or links, no start timestamp, and a parent taken from the
+#     context.
+#   Requirement: OTel Trace API, Span creation: the kind defaults to
+#     INTERNAL, and a span is a child of the context's span unless the caller
+#     asks for a root; spec #2, "kind (internal by default) ... a root
+#     indication that ignores the parent in the context".
+#   Proof: Laws.default_options, by computation.
+law default_options:
+  {Api.SpanOptions.kind(Api.SpanOptions.default()) == Api.Internal{} : Api.SpanKind} &
+  {Api.SpanOptions.attributes(Api.SpanOptions.default()) == Nil{} : List<&2, Api.Attribute>} &
+  {Api.SpanOptions.links(Api.SpanOptions.default()) == Nil{} : List<&2, Api.Link>} &
+  {Api.SpanOptions.start_timestamp(Api.SpanOptions.default()) == None{} : Maybe<&2, Api.Timestamp>} &
+  {Api.SpanOptions.is_root(Api.SpanOptions.default()) == False{} : Bool}
+
+# LAW options_set_then_read
+#   Claim: an option set on any options is what its reader answers.
+#   Requirement: #6, "Start options: kind (internal by default), initial
+#     attributes, links, an optional start timestamp and a root indication".
+#   Proof: Laws.options_set_then_read, by opening the record.
+law options_set_then_read:
+  for +options: Api.SpanOptions
+  for kind: Api.SpanKind
+  for attributes: List<&2, Api.Attribute>
+  for links: List<&2, Api.Link>
+  for timestamp: Api.Timestamp
+  for root: Bool
+  {Api.SpanOptions.kind(Api.SpanOptions.with_kind(options, kind)) == kind : Api.SpanKind} &
+  {Api.SpanOptions.attributes(Api.SpanOptions.with_attributes(options, attributes)) == attributes : List<&2, Api.Attribute>} &
+  {Api.SpanOptions.links(Api.SpanOptions.with_links(options, links)) == links : List<&2, Api.Link>} &
+  {Api.SpanOptions.start_timestamp(Api.SpanOptions.with_start_timestamp(options, timestamp)) ==
+    Some{timestamp} : Maybe<&2, Api.Timestamp>} &
+  {Api.SpanOptions.is_root(Api.SpanOptions.with_root(options, root)) == root : Bool}
+
+# 12. Status
+# ==========
+#
+# A status is unset, ok, or error with a description (#6). Status.after is
+# the transition that setting a status makes, and ok is final.
+
+# LAW status_description
+#   Claim: only the error status has a description: the unset and the ok
+#     status answer none, and an error answers the description it was built
+#     with.
+#   Requirement: OTel Trace API, Set Status: the description "MUST only be
+#     used with the Error StatusCode value"; spec #2, "a description exists
+#     only in the error variant".
+#   Why: a backend shows the description as the reason of a failure; one
+#     attached to a successful span would mislead.
+#   Proof: Laws.status_description, by computation.
+law status_description:
+  for +description: String
+  {Api.Status.description(Api.Unset{}) == None{} : Maybe<&2, String>} &
+  {Api.Status.description(Api.Ok{}) == None{} : Maybe<&2, String>} &
+  {Api.Status.description(Api.Error{description}) == Some{description} : Maybe<&2, String>}
+
+# LAW status_after
+#   Claim: a status set over the unset status or over an error is the new
+#     status; a status set over ok leaves ok.
+#   Requirement: OTel Trace API, Set Status: "Only the value of the last call
+#     will be recorded" and, of Ok, "any further attempts to change it SHOULD
+#     be ignored"; spec #2, "ok is final; a later status is ignored".
+#   Why: an operator who marked a span as validated must not see it turned
+#     back into an error by a later, lower-level call.
+#   Proof: Laws.status_after, by computation.
+law status_after:
+  for +status: Api.Status
+  for description: String
+  {Api.Status.after(Api.Unset{}, status) == status : Api.Status} &
+  {Api.Status.after(Api.Error{description}, status) == status : Api.Status} &
+  {Api.Status.after(Api.Ok{}, status) == Api.Ok{} : Api.Status}
+
+# LAW status_set
+#   Claim: the status of a recording span after a set is the transition of
+#     the status it had by the status set.
+#   Requirement: as status_after.
+#   Proof: Laws.status_set, by opening the record.
+law status_set:
+  for +data: Api.SpanData
+  for +status: Api.Status
+  {Api.SpanData.status(Api.SpanData.set_status(data, status)) ==
+    Api.Status.after(Api.SpanData.status(data), status) : Api.Status}
+
+# LAW ok_final
+#   Claim: once ok is set on any span, setting any status leaves the span as
+#     it was.
+#   Requirement: as status_after; #6, "ok is final".
+#   Reading: the law holds for a recording and for a non-recording span
+#     alike: on a non-recording span both sides are the span itself.
+#   Proof: Laws.ok_final, by cases on the span and on its status.
+law ok_final:
+  for -P: Data
+  for +span: Api.Span<P>
+  for status: Api.Status
+  {Api.Span.set_status(P, Api.Span.set_status(P, span, Api.Ok{}), status) ==
+    Api.Span.set_status(P, span, Api.Ok{}) : Api.Span<P>}
+
+# 13. Events and links
+# ====================
+#
+# An event is a named record with attributes and a time, which is an
+# explicit timestamp or an offset from the span's start reading; a link is
+# a span context with attributes (#6). The attributes of each carry their
+# own dropped count, and a span re-enforces its limits on them when it adds
+# them (section 14).
+
+# LAW event_readers
+#   Claim: each reader of an event answers what it was built with: the name,
+#     the attributes as a collection, and the time, an explicit timestamp for
+#     SpanEvent.at and an offset in milliseconds for SpanEvent.at_offset.
+#   Requirement: OTel Trace API, Add Events: an event has a name, a timestamp
+#     and attributes; spec #2, "An event therefore carries either an explicit
+#     timestamp or an offset in milliseconds".
+#   Proof: Laws.event_readers, by computation.
+law event_readers:
+  for +name: String
+  for +attributes: List<&2, Api.Attribute>
+  for +timestamp: Api.Timestamp
+  for +milliseconds: Nat
+  {Api.SpanEvent.name(Api.SpanEvent.at(name, attributes, timestamp)) == name : String} &
+  {Api.SpanEvent.attributes(Api.SpanEvent.at(name, attributes, timestamp)) == Api.Attributes.from_list(attributes) : Api.Attributes} &
+  {Api.SpanEvent.time(Api.SpanEvent.at(name, attributes, timestamp)) == Api.AtTimestamp{timestamp} : Api.EventTime} &
+  {Api.SpanEvent.name(Api.SpanEvent.at_offset(name, attributes, milliseconds)) == name : String} &
+  {Api.SpanEvent.attributes(Api.SpanEvent.at_offset(name, attributes, milliseconds)) ==
+    Api.Attributes.from_list(attributes) : Api.Attributes} &
+  {Api.SpanEvent.time(Api.SpanEvent.at_offset(name, attributes, milliseconds)) == Api.AtOffset{milliseconds} : Api.EventTime}
+
+# LAW link_readers
+#   Claim: each reader of a link answers what it was built with: the span
+#     context linked to and the attributes as a collection.
+#   Requirement: OTel Trace API, Span creation: a link is a span context with
+#     attributes; CONTEXT.md, Link.
+#   Proof: Laws.link_readers, by computation.
+law link_readers:
+  for +span_context: Api.SpanContext
+  for +attributes: List<&2, Api.Attribute>
+  {Api.Link.span_context(Api.Link.to(span_context, attributes)) == span_context : Api.SpanContext} &
+  {Api.Link.attributes(Api.Link.to(span_context, attributes)) == Api.Attributes.from_list(attributes) : Api.Attributes}
+
+# LAW exception_event
+#   Claim: the exception event is named `exception`, carries the type under
+#     `exception.type` and the message under `exception.message`, both as
+#     strings, and happens at the timestamp given.
+#   Requirement: OTel Trace API, Record Exception: the event is named
+#     `exception` and carries the semantic conventions' `exception.type` and
+#     `exception.message`; spec #2, "an event named `exception` with the
+#     attributes `exception.type` and `exception.message`, both strings
+#     given by the caller".
+#   Why: backends show an error under these names and no other.
+#   Proof: Laws.exception_event, by computation.
+law exception_event:
+  for +type_name: String
+  for +message: String
+  for +timestamp: Api.Timestamp
+  {Api.SpanEvent.name(Api.SpanEvent.exception(type_name, message, timestamp)) == "exception" : String} &
+  {Api.Attributes.get(Api.SpanEvent.attributes(Api.SpanEvent.exception(type_name, message, timestamp)), "exception.type") ==
+    Some{Api.StringValue{type_name}} : Maybe<&2, Api.AttributeValue>} &
+  {Api.Attributes.get(Api.SpanEvent.attributes(Api.SpanEvent.exception(type_name, message, timestamp)), "exception.message") ==
+    Some{Api.StringValue{message}} : Maybe<&2, Api.AttributeValue>} &
+  {Api.SpanEvent.time(Api.SpanEvent.exception(type_name, message, timestamp)) == Api.AtTimestamp{timestamp} : Api.EventTime}
+
+# LAW exception_with_event
+#   Claim: the exception event with extra attributes is the event named
+#     `exception` whose attributes are the type and the message followed by
+#     the extra attributes, in that order; the plain exception event is the
+#     same with no extra attributes.
+#   Requirement: OTel Trace API, Record Exception: "additional attributes"
+#     may be passed with the exception; spec #2, "A variant takes extra
+#     attributes".
+#   Reading: the extra attributes follow the two standard ones, so an extra
+#     attribute with a standard key replaces the standard value in place.
+#   Proof: Laws.exception_with_event, by computation.
+law exception_with_event:
+  for +type_name: String
+  for +message: String
+  for +extras: List<&2, Api.Attribute>
+  for +timestamp: Api.Timestamp
+  {Api.SpanEvent.exception_with(type_name, message, extras, timestamp) ==
+    Api.SpanEvent.at("exception", Con{Api.Attribute{"exception.type", Api.StringValue{type_name}},
+      Con{Api.Attribute{"exception.message", Api.StringValue{message}}, extras}}, timestamp) : Api.SpanEvent} &
+  {Api.SpanEvent.exception(type_name, message, timestamp) ==
+    Api.SpanEvent.exception_with(type_name, message, Nil{}, timestamp) : Api.SpanEvent}
+
+# LAW attributes_within
+#   Claim: a collection re-enforced under limits is its attributes set again,
+#     in order, under the limits, starting from no attributes and the count
+#     it had already dropped.
+#   Requirement: OTel Trace SDK, Span limits: the limits on the attributes
+#     of an event and of a link apply to the attributes the span stores;
+#     spec #2, "Every operation enforces the limits as it runs".
+#   Why: a fork builds its events with no limits in sight; the owner's span
+#     must store them within its limits, counting what it drops on top of
+#     what the fork dropped.
+#   Proof: Laws.attributes_within, by opening the collection.
+law attributes_within:
+  for +limits: Api.AttributeLimits
+  for +attributes: Api.Attributes
+  {Api.Attributes.within(limits, attributes) ==
+    Api.Attributes.set_all_within(limits, Api.Attributes{Nil{}, Api.Attributes.dropped(attributes)},
+      Api.Attributes.to_list(attributes)) : Api.Attributes}
+
+# LAW within_event_and_link
+#   Claim: an event or a link within limits keeps its name, time and span
+#     context, and has its attributes re-enforced under the limits.
+#   Requirement: as attributes_within.
+#   Proof: Laws.within_event_and_link, by computation.
+law within_event_and_link:
+  for +limits: Api.AttributeLimits
+  for name: String
+  for +attributes: Api.Attributes
+  for time: Api.EventTime
+  for span_context: Api.SpanContext
+  {Api.SpanEvent.within(limits, Api.SpanEvent{name, attributes, time}) ==
+    Api.SpanEvent{name, Api.Attributes.within(limits, attributes), time} : Api.SpanEvent} &
+  {Api.Link.within(limits, Api.Link{span_context, attributes}) ==
+    Api.Link{span_context, Api.Attributes.within(limits, attributes)} : Api.Link}
+
+# An event of two attributes within a limit of one attribute and three
+# characters: the first is kept, cut, and the second is dropped.
+def limited_event() -> Api.SpanEvent:
+  Api.SpanEvent.within(Api.AttributeLimits{Some{1n}, Some{3n}},
+    Api.SpanEvent.at("cache.miss", [Api.Attribute{"cache.key", Api.StringValue{"user:42"}},
+      Api.Attribute{"cache.hit", Api.BoolValue{False{}}}], Api.Timestamp.from_milliseconds(1500n)))
+
+# LAW event_limits_literal
+#   Claim: limits at work on a literal event: it keeps `cache.key` cut to
+#     three characters, counts the one attribute it dropped, and keeps its
+#     name and time.
+#   Proof: Laws.event_limits_literal, by computation.
+law event_limits_literal:
+  {Api.Attributes.to_list(Api.SpanEvent.attributes(limited_event())) ==
+    [Api.Attribute{"cache.key", Api.StringValue{"use"}}] : List<&2, Api.Attribute>} &
+  {Api.Attributes.dropped(Api.SpanEvent.attributes(limited_event())) == 1n : Nat} &
+  {Api.SpanEvent.name(limited_event()) == "cache.miss" : String} &
+  {Api.SpanEvent.time(limited_event()) == Api.AtTimestamp{Api.Timestamp.from_milliseconds(1500n)} : Api.EventTime}
+
+# 14. Spans
+# =========
+#
+# A span is a recording span, Api.Recording{payload, data}, or a
+# non-recording span, Api.NonRecording{span_context} (#6). Every operation
+# of a recording span is an operation on its data with the payload passed
+# through untouched (recording_delegates), and every operation of a
+# non-recording span is the identity (non_recording_identity). The rules of
+# the data are stated on SpanData: the attributes follow the collection's
+# rules under the span's limits, events and links are appended while their
+# counts leave room and dropped and counted once they do not, and the
+# readers answer what the data was built with.
+
+# LAW new_data_readers
+#   Claim: each reader of new span data answers the field it was built with:
+#     the scope, the span context, the parent, the name, the kind, the start
+#     timestamp, the start reading, the sampled indication and the limits;
+#     the data starts with no attributes, no events, no links, nothing
+#     dropped and the unset status.
+#   Requirement: OTel Trace API, Span: a span starts with the unset status
+#     and no events; #6, "readers answer the fields set at construction".
+#   Proof: Laws.new_data_readers, by computation.
+law new_data_readers:
+  for +scope: Api.InstrumentationScope
+  for +span_context: Api.SpanContext
+  for +parent: Maybe<&2, Api.SpanContext>
+  for +name: String
+  for +kind: Api.SpanKind
+  for +start_timestamp: Api.Timestamp
+  for +start_reading: Nat
+  for +sampled: Bool
+  for +limits: Api.SpanLimits
+  {Api.SpanData.scope(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == scope : Api.InstrumentationScope} &
+  {Api.SpanData.span_context(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == span_context : Api.SpanContext} &
+  {Api.SpanData.parent(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == parent : Maybe<&2, Api.SpanContext>} &
+  {Api.SpanData.name(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == name : String} &
+  {Api.SpanData.kind(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == kind : Api.SpanKind} &
+  {Api.SpanData.start_timestamp(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == start_timestamp : Api.Timestamp} &
+  {Api.SpanData.start_reading(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == start_reading : Nat} &
+  {Api.SpanData.is_sampled(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == sampled : Bool} &
+  {Api.SpanData.attributes(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == Api.Attributes.empty() : Api.Attributes} &
+  {Api.SpanData.events(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == Nil{} : List<&2, Api.SpanEvent>} &
+  {Api.SpanData.dropped_events(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == 0n : Nat} &
+  {Api.SpanData.links(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == Nil{} : List<&2, Api.Link>} &
+  {Api.SpanData.dropped_links(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == 0n : Nat} &
+  {Api.SpanData.status(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == Api.Unset{} : Api.Status} &
+  {Api.SpanData.limits(Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == limits : Api.SpanLimits}
+
+# LAW recording_readers
+#   Claim: a recording span built from parts is recording, has the span
+#     context and the name it was built with, and its data is the new data
+#     of those parts.
+#   Requirement: #6, "Readers on a copy: whether the span is recording, its
+#     span context, its name, and its data for tests and for SDKs".
+#   Why: instrumentation reads the span context to inject it or link to it,
+#     and skips expensive attributes when a span is not recording.
+#   Proof: Laws.recording_readers, by computation.
+law recording_readers:
+  for -P: Data
+  for +payload: P
+  for +scope: Api.InstrumentationScope
+  for +span_context: Api.SpanContext
+  for +parent: Maybe<&2, Api.SpanContext>
+  for +name: String
+  for +kind: Api.SpanKind
+  for +start_timestamp: Api.Timestamp
+  for +start_reading: Nat
+  for +sampled: Bool
+  for +limits: Api.SpanLimits
+  {Api.Span.is_recording(P, Api.Span.recording(P, payload, scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) == True{} : Bool} &
+  {Api.Span.span_context(P, Api.Span.recording(P, payload, scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) ==
+    Some{span_context} : Maybe<&2, Api.SpanContext>} &
+  {Api.Span.name(P, Api.Span.recording(P, payload, scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) ==
+    Some{name} : Maybe<&2, String>} &
+  {Api.Span.data(P, Api.Span.recording(P, payload, scope, span_context, parent, name, kind, start_timestamp, start_reading,
+    sampled, limits)) ==
+    Some{Api.SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading,
+      sampled, limits)} : Maybe<&2, Api.SpanData>}
+
+# LAW non_recording_readers
+#   Claim: a non-recording span is not recording, carries the optional span
+#     context it was built with, and has no name and no data.
+#   Requirement: spec #2, "A non-recording span holds only an optional span
+#     context"; CONTEXT.md, Non-recording span: "it carries its parent's span
+#     context so that propagation continues".
+#   Proof: Laws.non_recording_readers, by computation.
+law non_recording_readers:
+  for -P: Data
+  for +span_context: Maybe<&2, Api.SpanContext>
+  {Api.Span.is_recording(P, Api.Span.non_recording(P, span_context)) == False{} : Bool} &
+  {Api.Span.span_context(P, Api.Span.non_recording(P, span_context)) == span_context : Maybe<&2, Api.SpanContext>} &
+  {Api.Span.name(P, Api.Span.non_recording(P, span_context)) == None{} : Maybe<&2, String>} &
+  {Api.Span.data(P, Api.Span.non_recording(P, span_context)) == None{} : Maybe<&2, Api.SpanData>}
+
+# LAW recording_delegates
+#   Claim: each operation on a recording span is that operation on its data,
+#     with the payload passed through untouched.
+#   Requirement: spec #2, "store my configuration as a `Data` payload ... in
+#     each recording span, so that ending a span needs nothing but the span";
+#     #6, "the API never inspects the payload".
+#   Why: the SDK finds at the end exactly the payload it stored at the start,
+#     whatever instrumentation recorded in between.
+#   Proof: Laws.recording_delegates, by computation.
+law recording_delegates:
+  for -P: Data
+  for +payload: P
+  for +data: Api.SpanData
+  for +key: String
+  for +value: Api.AttributeValue
+  for +entries: List<&2, Api.Attribute>
+  for +link: Api.Link
+  for +links: List<&2, Api.Link>
+  for +status: Api.Status
+  for +name: String
+  for +event: Api.SpanEvent
+  for +events: List<&2, Api.SpanEvent>
+  {Api.Span.set_attribute(P, Api.Recording{payload, data}, key, value) ==
+    Api.Recording{payload, Api.SpanData.set_attribute(data, key, value)} : Api.Span<P>} &
+  {Api.Span.set_attributes(P, Api.Recording{payload, data}, entries) ==
+    Api.Recording{payload, Api.SpanData.set_attributes(data, entries)} : Api.Span<P>} &
+  {Api.Span.add_link(P, Api.Recording{payload, data}, link) == Api.Recording{payload, Api.SpanData.add_link(data, link)} : Api.Span<P>} &
+  {Api.Span.add_links(P, Api.Recording{payload, data}, links) ==
+    Api.Recording{payload, Api.SpanData.add_links(data, links)} : Api.Span<P>} &
+  {Api.Span.set_status(P, Api.Recording{payload, data}, status) ==
+    Api.Recording{payload, Api.SpanData.set_status(data, status)} : Api.Span<P>} &
+  {Api.Span.update_name(P, Api.Recording{payload, data}, name) ==
+    Api.Recording{payload, Api.SpanData.update_name(data, name)} : Api.Span<P>} &
+  {Api.Span.add_event(P, Api.Recording{payload, data}, event) ==
+    Api.Recording{payload, Api.SpanData.add_event(data, event)} : Api.Span<P>} &
+  {Api.Span.add_events(P, Api.Recording{payload, data}, events) ==
+    Api.Recording{payload, Api.SpanData.add_events(data, events)} : Api.Span<P>}
+
+# LAW non_recording_identity
+#   Claim: every operation on a non-recording span answers the span
+#     unchanged: setting an attribute or several, adding a link or several,
+#     setting the status, updating the name, adding an event, an event at a
+#     timestamp or several events, and recording an exception with or
+#     without extra attributes.
+#   Requirement: OTel Trace API, Span, IsRecording: a span that is not
+#     recording accepts the operations and records nothing; spec #2, "On a
+#     non-recording span each is the identity"; CONTEXT.md, Non-recording
+#     span.
+#   Why: instrumentation has one code path whether or not an SDK records.
+#   Proof: Laws.non_recording_identity, by computation.
+law non_recording_identity:
+  for -P: Data
+  for +span_context: Maybe<&2, Api.SpanContext>
+  for key: String
+  for value: Api.AttributeValue
+  for entries: List<&2, Api.Attribute>
+  for link: Api.Link
+  for links: List<&2, Api.Link>
+  for status: Api.Status
+  for name: String
+  for event: Api.SpanEvent
+  for events: List<&2, Api.SpanEvent>
+  for event_name: String
+  for attributes: List<&2, Api.Attribute>
+  for +timestamp: Api.Timestamp
+  for +type_name: String
+  for +message: String
+  for extras: List<&2, Api.Attribute>
+  {Api.Span.set_attribute(P, Api.Span.non_recording(P, span_context), key, value) ==
+    Api.Span.non_recording(P, span_context) : Api.Span<P>} &
+  {Api.Span.set_attributes(P, Api.Span.non_recording(P, span_context), entries) == Api.Span.non_recording(P, span_context) : Api.Span<P>} &
+  {Api.Span.add_link(P, Api.Span.non_recording(P, span_context), link) == Api.Span.non_recording(P, span_context) : Api.Span<P>} &
+  {Api.Span.add_links(P, Api.Span.non_recording(P, span_context), links) == Api.Span.non_recording(P, span_context) : Api.Span<P>} &
+  {Api.Span.set_status(P, Api.Span.non_recording(P, span_context), status) == Api.Span.non_recording(P, span_context) : Api.Span<P>} &
+  {Api.Span.update_name(P, Api.Span.non_recording(P, span_context), name) == Api.Span.non_recording(P, span_context) : Api.Span<P>} &
+  {Api.Span.add_event(P, Api.Span.non_recording(P, span_context), event) == Api.Span.non_recording(P, span_context) : Api.Span<P>} &
+  {Api.Span.add_event_at(P, Api.Span.non_recording(P, span_context), event_name, attributes, timestamp) ==
+    Api.Span.non_recording(P, span_context) : Api.Span<P>} &
+  {Api.Span.add_events(P, Api.Span.non_recording(P, span_context), events) == Api.Span.non_recording(P, span_context) : Api.Span<P>} &
+  {Api.Span.record_exception(P, Api.Span.non_recording(P, span_context), type_name, message, timestamp) ==
+    Api.Span.non_recording(P, span_context) : Api.Span<P>} &
+  {Api.Span.record_exception_with(P, Api.Span.non_recording(P, span_context), type_name, message, extras, timestamp) ==
+    Api.Span.non_recording(P, span_context) : Api.Span<P>}
+
+# LAW span_attribute_rules
+#   Claim: setting an attribute on span data sets it on the span's
+#     attributes under the span's attribute limits, and setting several sets
+#     them all under those limits: the rules of the collection (sections 5
+#     and 6) are the rules of the span.
+#   Requirement: OTel Trace API, Set Attributes, and Trace SDK, Span limits:
+#     the span's attributes follow the attribute rules under the span's
+#     limits; #6, "attribute rules on the span match the collection's".
+#   Why: every law of the collection, from unique keys to the dropped count,
+#     holds of a span's attributes without being restated.
+#   Proof: Laws.span_attribute_rules, by opening the record.
+law span_attribute_rules:
+  for +data: Api.SpanData
+  for +key: String
+  for +value: Api.AttributeValue
+  for +entries: List<&2, Api.Attribute>
+  {Api.SpanData.attributes(Api.SpanData.set_attribute(data, key, value)) ==
+    Api.Attributes.set_within(Api.SpanLimits.span_attributes(Api.SpanData.limits(data)),
+      Api.SpanData.attributes(data), key, value) : Api.Attributes} &
+  {Api.SpanData.attributes(Api.SpanData.set_attributes(data, entries)) ==
+    Api.Attributes.set_all_within(Api.SpanLimits.span_attributes(Api.SpanData.limits(data)),
+      Api.SpanData.attributes(data), entries) : Api.Attributes}
+
+# LAW set_attributes_fold
+#   Claim: setting several attributes on a span sets them one by one, in
+#     order, and setting none changes nothing.
+#   Requirement: #6, "set one attribute, set several".
+#   Proof: Laws.set_attributes_fold, by opening the span and its data.
+law set_attributes_fold:
+  for -P: Data
+  for +span: Api.Span<P>
+  for +key: String
+  for +value: Api.AttributeValue
+  for rest: List<&2, Api.Attribute>
+  {Api.Span.set_attributes(P, span, Con{Api.Attribute{key, value}, rest}) ==
+    Api.Span.set_attributes(P, Api.Span.set_attribute(P, span, key, value), rest) : Api.Span<P>} &
+  {Api.Span.set_attributes(P, span, Nil{}) == span : Api.Span<P>}
+
+# LAW update_name_replaces
+#   Claim: after a name update, the name of the data is the new name, and
+#     the name of the recording span is the new name.
+#   Requirement: OTel Trace API, UpdateName: "Updates the Span name";
+#     #6, "update name replaces".
+#   Why: a server span named after the method is renamed after the route
+#     once the route is known, and the export carries the route.
+#   Proof: Laws.update_name_replaces, by opening the record.
+law update_name_replaces:
+  for -P: Data
+  for payload: P
+  for +data: Api.SpanData
+  for +name: String
+  {Api.SpanData.name(Api.SpanData.update_name(data, name)) == name : String} &
+  {Api.Span.name(P, Api.Span.update_name(P, Api.Recording{payload, data}, name)) == Some{name} : Maybe<&2, String>}
+
+# LAW event_added
+#   Claim: while the events are fewer than the event count limit, adding an
+#     event appends it after the others, with its attributes re-enforced
+#     under the event attribute limits, and drops nothing.
+#   Requirement: OTel Trace SDK, Span limits: events are kept until
+#     EventCountLimit is reached, each with at most
+#     AttributePerEventCountLimit attributes; spec #2, "an event or a link
+#     past its count is dropped and counted".
+#   Reading: `limited` says the span's limits hold an event count `limit`,
+#     and `room` that the span holds fewer events than it.
+#   Proof: Laws.event_added, by rewriting both hypotheses into the span's
+#     check.
+law event_added:
+  for +limit: Nat
+  for +data: Api.SpanData
+  for +event: Api.SpanEvent
+  for limited: {Api.SpanLimits.event_count(Api.SpanData.limits(data)) == Some{limit} : Maybe<&2, Nat>}
+  for room: {Nat.is_lt(List.length(&2, Api.SpanEvent, Api.SpanData.events(data)), limit) == True{} : Bool}
+  {Api.SpanData.events(Api.SpanData.add_event(data, event)) ==
+    List.append(&2, Api.SpanEvent, Api.SpanData.events(data),
+      [Api.SpanEvent.within(Api.SpanLimits.event_attributes(Api.SpanData.limits(data)), event)]) : List<&2, Api.SpanEvent>} &
+  {Api.SpanData.dropped_events(Api.SpanData.add_event(data, event)) == Api.SpanData.dropped_events(data) : Nat}
+
+# LAW event_dropped
+#   Claim: once the events have reached the event count limit, adding an
+#     event keeps the events as they are and counts one more dropped event.
+#   Requirement: as event_added; OTel Trace SDK, Span limits: the span
+#     records how many events it dropped.
+#   Why: memory stays bounded while a span is open, and the export tells the
+#     operator how much was lost.
+#   Proof: Laws.event_dropped, by rewriting both hypotheses into the span's
+#     check.
+law event_dropped:
+  for +limit: Nat
+  for +data: Api.SpanData
+  for +event: Api.SpanEvent
+  for limited: {Api.SpanLimits.event_count(Api.SpanData.limits(data)) == Some{limit} : Maybe<&2, Nat>}
+  for full: {Nat.is_lt(List.length(&2, Api.SpanEvent, Api.SpanData.events(data)), limit) == False{} : Bool}
+  {Api.SpanData.events(Api.SpanData.add_event(data, event)) == Api.SpanData.events(data) : List<&2, Api.SpanEvent>} &
+  {Api.SpanData.dropped_events(Api.SpanData.add_event(data, event)) == 1n+Api.SpanData.dropped_events(data) : Nat}
+
+# LAW event_unlimited
+#   Claim: without an event count limit, adding an event always appends it,
+#     with its attributes re-enforced under the event attribute limits.
+#   Requirement: #4, "an unlimited form".
+#   Proof: Laws.event_unlimited, by rewriting the hypothesis into the span's
+#     check.
+law event_unlimited:
+  for +data: Api.SpanData
+  for +event: Api.SpanEvent
+  for unlimited: {Api.SpanLimits.event_count(Api.SpanData.limits(data)) == None{} : Maybe<&2, Nat>}
+  {Api.SpanData.events(Api.SpanData.add_event(data, event)) ==
+    List.append(&2, Api.SpanEvent, Api.SpanData.events(data),
+      [Api.SpanEvent.within(Api.SpanLimits.event_attributes(Api.SpanData.limits(data)), event)]) : List<&2, Api.SpanEvent>} &
+  {Api.SpanData.dropped_events(Api.SpanData.add_event(data, event)) == Api.SpanData.dropped_events(data) : Nat}
+
+# LAW events_bounded
+#   Claim: span data within its event count limit stays within it after any
+#     event is added: the count of events never exceeds the limit.
+#   Requirement: OTel Trace SDK, Span limits: events past EventCountLimit
+#     are discarded, so a span never holds more than the limit.
+#   Reading: `bound` says the events are at most the limit before the add;
+#     together with new_data_readers, every span built by adds under the
+#     limit stays at most the limit.
+#   Proof: Laws.events_bounded, via proofs/spans.bend.
+law events_bounded:
+  for +limit: Nat
+  for +data: Api.SpanData
+  for +event: Api.SpanEvent
+  for limited: {Api.SpanLimits.event_count(Api.SpanData.limits(data)) == Some{limit} : Maybe<&2, Nat>}
+  for bound: {Nat.is_le(List.length(&2, Api.SpanEvent, Api.SpanData.events(data)), limit) == True{} : Bool}
+  {Nat.is_le(List.length(&2, Api.SpanEvent, Api.SpanData.events(Api.SpanData.add_event(data, event))), limit) == True{} : Bool}
+
+# LAW add_events_fold
+#   Claim: adding a list of events adds them one by one, in order, and
+#     adding none changes nothing.
+#   Requirement: spec #2, "event lists add as a fold of single events"; #6,
+#     "adding a list of events equals folding single additions".
+#   Why: a fork's observations, returned as data, are recorded exactly as if
+#     the owner had added each of them.
+#   Proof: Laws.add_events_fold, by cases on the span.
+law add_events_fold:
+  for -P: Data
+  for +span: Api.Span<P>
+  for +event: Api.SpanEvent
+  for rest: List<&2, Api.SpanEvent>
+  {Api.Span.add_events(P, span, Con{event, rest}) == Api.Span.add_events(P, Api.Span.add_event(P, span, event), rest) : Api.Span<P>} &
+  {Api.Span.add_events(P, span, Nil{}) == span : Api.Span<P>}
+
+# LAW event_shorthands
+#   Claim: adding an event at a timestamp adds the event SpanEvent.at builds,
+#     and recording an exception, with or without extra attributes, adds the
+#     exception event.
+#   Requirement: OTel Trace API, Record Exception: recording an exception is
+#     adding an event; #6, "record an exception with an explicit timestamp".
+#   Why: every law about events, from the limits to the fold, holds of a
+#     recorded exception.
+#   Proof: Laws.event_shorthands, by computation.
+law event_shorthands:
+  for -P: Data
+  for +span: Api.Span<P>
+  for +name: String
+  for +attributes: List<&2, Api.Attribute>
+  for +timestamp: Api.Timestamp
+  for +type_name: String
+  for +message: String
+  for +extras: List<&2, Api.Attribute>
+  {Api.Span.add_event_at(P, span, name, attributes, timestamp) ==
+    Api.Span.add_event(P, span, Api.SpanEvent.at(name, attributes, timestamp)) : Api.Span<P>} &
+  {Api.Span.record_exception(P, span, type_name, message, timestamp) ==
+    Api.Span.add_event(P, span, Api.SpanEvent.exception(type_name, message, timestamp)) : Api.Span<P>} &
+  {Api.Span.record_exception_with(P, span, type_name, message, extras, timestamp) ==
+    Api.Span.add_event(P, span, Api.SpanEvent.exception_with(type_name, message, extras, timestamp)) : Api.Span<P>}
+
+# LAW link_added
+#   Claim: while the links are fewer than the link count limit, adding a
+#     link appends it after the others, with its attributes re-enforced
+#     under the link attribute limits, and drops nothing.
+#   Requirement: OTel Trace SDK, Span limits: links are kept until
+#     LinkCountLimit is reached, each with at most
+#     AttributePerLinkCountLimit attributes; spec #2, as event_added.
+#   Proof: Laws.link_added, by rewriting both hypotheses into the span's
+#     check.
+law link_added:
+  for +limit: Nat
+  for +data: Api.SpanData
+  for +link: Api.Link
+  for limited: {Api.SpanLimits.link_count(Api.SpanData.limits(data)) == Some{limit} : Maybe<&2, Nat>}
+  for room: {Nat.is_lt(List.length(&2, Api.Link, Api.SpanData.links(data)), limit) == True{} : Bool}
+  {Api.SpanData.links(Api.SpanData.add_link(data, link)) ==
+    List.append(&2, Api.Link, Api.SpanData.links(data),
+      [Api.Link.within(Api.SpanLimits.link_attributes(Api.SpanData.limits(data)), link)]) : List<&2, Api.Link>} &
+  {Api.SpanData.dropped_links(Api.SpanData.add_link(data, link)) == Api.SpanData.dropped_links(data) : Nat}
+
+# LAW link_dropped
+#   Claim: once the links have reached the link count limit, adding a link
+#     keeps the links as they are and counts one more dropped link.
+#   Requirement: as link_added; OTel Trace SDK, Span limits: the span
+#     records how many links it dropped.
+#   Proof: Laws.link_dropped, by rewriting both hypotheses into the span's
+#     check.
+law link_dropped:
+  for +limit: Nat
+  for +data: Api.SpanData
+  for +link: Api.Link
+  for limited: {Api.SpanLimits.link_count(Api.SpanData.limits(data)) == Some{limit} : Maybe<&2, Nat>}
+  for full: {Nat.is_lt(List.length(&2, Api.Link, Api.SpanData.links(data)), limit) == False{} : Bool}
+  {Api.SpanData.links(Api.SpanData.add_link(data, link)) == Api.SpanData.links(data) : List<&2, Api.Link>} &
+  {Api.SpanData.dropped_links(Api.SpanData.add_link(data, link)) == 1n+Api.SpanData.dropped_links(data) : Nat}
+
+# LAW link_unlimited
+#   Claim: without a link count limit, adding a link always appends it, with
+#     its attributes re-enforced under the link attribute limits.
+#   Requirement: #4, "an unlimited form".
+#   Proof: Laws.link_unlimited, by rewriting the hypothesis into the span's
+#     check.
+law link_unlimited:
+  for +data: Api.SpanData
+  for +link: Api.Link
+  for unlimited: {Api.SpanLimits.link_count(Api.SpanData.limits(data)) == None{} : Maybe<&2, Nat>}
+  {Api.SpanData.links(Api.SpanData.add_link(data, link)) ==
+    List.append(&2, Api.Link, Api.SpanData.links(data),
+      [Api.Link.within(Api.SpanLimits.link_attributes(Api.SpanData.limits(data)), link)]) : List<&2, Api.Link>} &
+  {Api.SpanData.dropped_links(Api.SpanData.add_link(data, link)) == Api.SpanData.dropped_links(data) : Nat}
+
+# LAW add_links_fold
+#   Claim: adding a list of links adds them one by one, in order, and adding
+#     none changes nothing.
+#   Requirement: #6, "add a link"; spec #2, the start options' links.
+#   Why: an SDK adds the links of the start options exactly as if the owner
+#     had added each of them.
+#   Proof: Laws.add_links_fold, by cases on the span.
+law add_links_fold:
+  for -P: Data
+  for +span: Api.Span<P>
+  for +link: Api.Link
+  for rest: List<&2, Api.Link>
+  {Api.Span.add_links(P, span, Con{link, rest}) == Api.Span.add_links(P, Api.Span.add_link(P, span, link), rest) : Api.Span<P>} &
+  {Api.Span.add_links(P, span, Nil{}) == span : Api.Span<P>}
+
+# LAW links_bounded
+#   Claim: span data within its link count limit stays within it after any
+#     link is added: the count of links never exceeds the limit.
+#   Requirement: OTel Trace SDK, Span limits: links past LinkCountLimit are
+#     discarded, so a span never holds more than the limit.
+#   Proof: Laws.links_bounded, via proofs/spans.bend.
+law links_bounded:
+  for +limit: Nat
+  for +data: Api.SpanData
+  for +link: Api.Link
+  for limited: {Api.SpanLimits.link_count(Api.SpanData.limits(data)) == Some{limit} : Maybe<&2, Nat>}
+  for bound: {Nat.is_le(List.length(&2, Api.Link, Api.SpanData.links(data)), limit) == True{} : Bool}
+  {Nat.is_le(List.length(&2, Api.Link, Api.SpanData.links(Api.SpanData.add_link(data, link))), limit) == True{} : Bool}

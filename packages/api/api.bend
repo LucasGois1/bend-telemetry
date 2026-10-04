@@ -13,17 +13,20 @@ import ./src/limbs.bend as Limbs
 # operations, a section per ticket of the specification. Today those are the
 # pure values of the API (#4): attribute values with their 64-bit integers
 # and doubles, attributes and the attribute collection, span limits and
-# their enforcement, and timestamps; and the span context and the explicit
-# context (#5). Spans, tracers and the SDK slots follow in later tickets.
-# The package imports no foreign code, so that every library that depends on
-# it stays provable; the claims this code must satisfy are stated in
-# LAWS.bend and proved in PROOF.bend, beside this file. README.md beside
-# this file is the reference.
+# their enforcement, and timestamps; the span context and the explicit
+# context (#5); and the span with its two states, recording and
+# non-recording, its pure operations, its events, links, status, kinds,
+# start options and instrumentation scope (#6). Tracers, span start and end
+# and the SDK slots follow in later tickets. The package imports no foreign
+# code, so that every library that depends on it stays provable; the claims
+# this code must satisfy are stated in LAWS.bend and proved in PROOF.bend,
+# beside this file. README.md beside this file is the reference.
 #
 # W3C Trace Context comes from bend-trace-context, imported by its BendHub
 # name and version, never by a relative path (#1). The glossary of the
 # repository's CONTEXT.md supplies the terms: attribute, attribute value,
-# span limits, timestamp, span context, context.
+# span limits, timestamp, span context, context, recording span,
+# non-recording span, event, link, status, instrumentation scope, span owner.
 #
 # Three types are opaque: Int64, Double and Timestamp. Their constructors are
 # their representation, which later Base releases may change (U64, F64), not
@@ -32,16 +35,21 @@ import ./src/limbs.bend as Limbs
 #
 # Contents
 #
-#   Package            Package.name, TraceContext.fields
-#   Types              every public type, declared first
-#   64-bit integers    Int64.*
-#   Doubles            Double.*
-#   Attribute values   AttributeValue.*
-#   Attributes         Attribute.*, Attributes.*
-#   Span limits        AttributeLimits.*, SpanLimits.*, Attributes.set_within
-#   Timestamps         Timestamp.*
-#   Span context       SpanContext.*
-#   Context            Context.*
+#   Package                Package.name, TraceContext.fields
+#   Types                  every public type, declared first
+#   64-bit integers        Int64.*
+#   Doubles                Double.*
+#   Attribute values       AttributeValue.*
+#   Attributes             Attribute.*, Attributes.*
+#   Span limits            AttributeLimits.*, SpanLimits.*, Attributes.set_within, Attributes.within
+#   Timestamps             Timestamp.*
+#   Span context           SpanContext.*
+#   Context                Context.*
+#   Instrumentation scope  InstrumentationScope.*
+#   Span options           SpanOptions.*
+#   Status                 Status.*
+#   Events and links       SpanEvent.*, Link.*
+#   Spans                  SpanData.*, Span.*
 
 # Package
 # =======
@@ -142,6 +150,100 @@ type SpanContext is Data:
 # constructor.
 type Context is Data:
   Context{span_context: Maybe<&2, SpanContext>}
+
+# The kind of a span: how it relates to its parent and its children in the
+# trace. Internal is the default; a server and a client span frame a remote
+# request, a producer and a consumer span frame a message.
+type SpanKind is Data:
+  Internal{}
+  Server{}
+  Client{}
+  Producer{}
+  Consumer{}
+
+# The status of a span: unset, ok, or error with a description. The
+# description exists only in the error variant, and ok is final; see
+# "Status" below.
+type Status is Data:
+  Unset{}
+  Ok{}
+  Error{description: String}
+
+# When an event happened: at an explicit timestamp, or at an offset in
+# milliseconds from the span's start reading, which the SDK resolves to wall
+# time at the end from the start timestamp.
+type EventTime is Data:
+  AtTimestamp{timestamp: Timestamp}
+  AtOffset{milliseconds: Nat}
+
+# An event: a named, timed record with attributes on a span, the attributes
+# carrying their own dropped count. Named SpanEvent because Base's Event is
+# the window event. Build it with SpanEvent.at, at_offset, exception and
+# exception_with; a span re-enforces its limits on it when it adds it.
+type SpanEvent is Data:
+  SpanEvent{name: String, attributes: Attributes, time: EventTime}
+
+# A link: a reference from a span to another span context, with attributes
+# that carry their own dropped count. Build it with Link.to.
+type Link is Data:
+  Link{span_context: SpanContext, attributes: Attributes}
+
+# The instrumentation scope: the name, optional version, optional schema URL
+# and attributes that identify the instrumentation that created a span. The
+# constructor builds it, and an empty name is kept as given.
+type InstrumentationScope is Data:
+  InstrumentationScope{name: String, version: Maybe<&2, String>, schema_url: Maybe<&2, String>, attributes: Attributes}
+
+# The start options of a span: its kind, internal by default, its initial
+# attributes and links, an optional start timestamp, and whether it is a
+# root, which ignores the parent in the context. Closed: build it with
+# SpanOptions.default and the with_ operations of "Span options" below,
+# never the constructor.
+type SpanOptions is Data:
+  SpanOptions{
+    kind: SpanKind,
+    attributes: List<&2, Attribute>,
+    links: List<&2, Link>,
+    start_timestamp: Maybe<&2, Timestamp>,
+    root: Bool
+  }
+
+# The data of a recording span: everything the SDK's end slot receives, that
+# is, everything but the payload. The span context is the span's own; the
+# parent is the span context it was started from, if any; the start reading
+# is the monotonic count of milliseconds taken at start, from which event
+# offsets are measured; the dropped counts say how many events and links
+# the span limits dropped. Build it with SpanData.new and change it through
+# the operations of "Spans" below; an SDK and an exporter read it with the
+# readers or by matching the constructor.
+type SpanData is Data:
+  SpanData{
+    scope: InstrumentationScope,
+    span_context: SpanContext,
+    parent: Maybe<&2, SpanContext>,
+    name: String,
+    kind: SpanKind,
+    start_timestamp: Timestamp,
+    start_reading: Nat,
+    sampled: Bool,
+    attributes: Attributes,
+    events: List<&2, SpanEvent>,
+    dropped_events: Nat,
+    links: List<&2, Link>,
+    dropped_links: Nat,
+    status: Status,
+    limits: SpanLimits
+  }
+
+# A span, with the SDK's payload type as its parameter: a recording span
+# holds the SDK's payload and its data, a non-recording span holds only an
+# optional span context, its parent's, so that propagation continues. It is
+# an affine Data value that its owner threads through the code (local ADR
+# 0003): the operations of "Spans" below are pure functions from a span to
+# a span. Build it with Span.recording and Span.non_recording.
+type Span<-P: Data> is Data:
+  Recording{payload: P, data: SpanData}
+  NonRecording{span_context: Maybe<&2, SpanContext>}
 
 # 64-bit integers
 # ===============
@@ -638,6 +740,16 @@ def Attributes.set_all_within.go(entries: List<&2, Attribute>, +limits: Attribut
 def Attributes.set_all_within(limits: AttributeLimits, attributes: Attributes, entries: List<&2, Attribute>) -> Attributes:
   Attributes.set_all_within.go(entries, limits, attributes)
 
+# A collection re-enforced under limits: its attributes set again, in order,
+# under the limits, starting from no attributes and the count it had already
+# dropped, so that what the limits drop now adds to it. A span applies it to
+# the attributes of an event and of a link it adds (#6), which their authors
+# built with no limits in sight (law attributes_within).
+def Attributes.within(limits: AttributeLimits, attributes: Attributes) -> Attributes:
+  match attributes:
+    case Attributes{entries, dropped}:
+      Attributes.set_all_within(limits, Attributes{Nil{}, dropped}, entries)
+
 # Timestamps
 # ==========
 #
@@ -860,3 +972,600 @@ def Context.clear_span_context(context: Context) -> Context:
   match context:
     case Context{span_context}:
       Context{None{}}
+
+# Instrumentation scope
+# =====================
+#
+# The instrumentation scope (#6) identifies the instrumentation that created
+# a span: a tracer carries one, and so does every span it starts. The
+# constructor InstrumentationScope{name, version, schema_url, attributes}
+# builds it; these readers answer its fields (law scope_readers).
+
+# The name of the instrumentation, such as its package name.
+def InstrumentationScope.name(scope: InstrumentationScope) -> String:
+  match scope:
+    case InstrumentationScope{name, version, schema_url, attributes}:
+      name
+
+# The version of the instrumentation, if it has one.
+def InstrumentationScope.version(scope: InstrumentationScope) -> Maybe<&2, String>:
+  match scope:
+    case InstrumentationScope{name, version, schema_url, attributes}:
+      version
+
+# The schema URL of the semantic conventions the instrumentation follows, if
+# it names one.
+def InstrumentationScope.schema_url(scope: InstrumentationScope) -> Maybe<&2, String>:
+  match scope:
+    case InstrumentationScope{name, version, schema_url, attributes}:
+      schema_url
+
+# The attributes of the instrumentation scope.
+def InstrumentationScope.attributes(scope: InstrumentationScope) -> Attributes:
+  match scope:
+    case InstrumentationScope{name, version, schema_url, attributes}:
+      attributes
+
+# Span options
+# ============
+#
+# The start options (#6): what instrumentation asks of a span it starts,
+# beyond its name. The record is closed: callers build it with
+# SpanOptions.default and the with_ operations, and read it with the readers,
+# so that an option added later breaks no caller.
+
+# The default options: an internal span with no initial attributes or links,
+# no start timestamp, and a parent taken from the context (law
+# default_options).
+def SpanOptions.default() -> SpanOptions:
+  SpanOptions{Internal{}, Nil{}, Nil{}, None{}, False{}}
+
+# The options with the kind (law options_set_then_read).
+def SpanOptions.with_kind(options: SpanOptions, kind: SpanKind) -> SpanOptions:
+  match options:
+    case SpanOptions{previous, attributes, links, start_timestamp, root}:
+      SpanOptions{kind, attributes, links, start_timestamp, root}
+
+# The options with the initial attributes, in place of any: the SDK sets
+# them on the span under its limits when it starts it.
+def SpanOptions.with_attributes(options: SpanOptions, attributes: List<&2, Attribute>) -> SpanOptions:
+  match options:
+    case SpanOptions{kind, previous, links, start_timestamp, root}:
+      SpanOptions{kind, attributes, links, start_timestamp, root}
+
+# The options with the links, in place of any: the SDK adds them to the span
+# under its limits when it starts it.
+def SpanOptions.with_links(options: SpanOptions, links: List<&2, Link>) -> SpanOptions:
+  match options:
+    case SpanOptions{kind, attributes, previous, start_timestamp, root}:
+      SpanOptions{kind, attributes, links, start_timestamp, root}
+
+# The options with an explicit start timestamp, in place of the SDK's clock.
+def SpanOptions.with_start_timestamp(options: SpanOptions, timestamp: Timestamp) -> SpanOptions:
+  match options:
+    case SpanOptions{kind, attributes, links, previous, root}:
+      SpanOptions{kind, attributes, links, Some{timestamp}, root}
+
+# The options with the root indication: a root span ignores the parent in
+# the context and begins a new trace.
+def SpanOptions.with_root(options: SpanOptions, root: Bool) -> SpanOptions:
+  match options:
+    case SpanOptions{kind, attributes, links, start_timestamp, previous}:
+      SpanOptions{kind, attributes, links, start_timestamp, root}
+
+# The kind asked for.
+def SpanOptions.kind(options: SpanOptions) -> SpanKind:
+  match options:
+    case SpanOptions{kind, attributes, links, start_timestamp, root}:
+      kind
+
+# The initial attributes asked for.
+def SpanOptions.attributes(options: SpanOptions) -> List<&2, Attribute>:
+  match options:
+    case SpanOptions{kind, attributes, links, start_timestamp, root}:
+      attributes
+
+# The links asked for.
+def SpanOptions.links(options: SpanOptions) -> List<&2, Link>:
+  match options:
+    case SpanOptions{kind, attributes, links, start_timestamp, root}:
+      links
+
+# The explicit start timestamp, if one was given.
+def SpanOptions.start_timestamp(options: SpanOptions) -> Maybe<&2, Timestamp>:
+  match options:
+    case SpanOptions{kind, attributes, links, start_timestamp, root}:
+      start_timestamp
+
+# Whether the span is to be a root.
+def SpanOptions.is_root(options: SpanOptions) -> Bool:
+  match options:
+    case SpanOptions{kind, attributes, links, start_timestamp, root}:
+      root
+
+# Status
+# ======
+#
+# The outcome of a span (#6): Unset{}, Ok{} or Error{description}. Only the
+# last status set is kept, except that ok is final: once a span owner has
+# validated the span as ok, a later status is ignored.
+
+# The description of an error status; None{} for the unset and the ok
+# status, which have none (law status_description).
+def Status.description(status: Status) -> Maybe<&2, String>:
+  match status:
+    case Unset{}:
+      None{}
+    case Ok{}:
+      None{}
+    case Error{description}:
+      Some{description}
+
+# The status after setting `next` over `current`: `next`, unless `current`
+# is ok, which is final (law status_after).
+def Status.after(current: Status, next: Status) -> Status:
+  match current:
+    case Ok{}:
+      Ok{}
+    case other:
+      next
+
+# Events and links
+# ================
+#
+# An event (#6) is built with a name, its attributes as a list, and a time:
+# an explicit timestamp with SpanEvent.at, or an offset in milliseconds from
+# the span's start reading with SpanEvent.at_offset, which the effectful
+# addition of a later ticket measures with Base's monotonic clock. The
+# exception event follows the specification's names. A link is built with
+# Link.to. Each carries its attributes as a collection with its own dropped
+# count; the span re-enforces its limits on them when it adds them, through
+# SpanEvent.within and Link.within.
+
+# The event named `name` with the attributes, at an explicit timestamp (law
+# event_readers).
+def SpanEvent.at(name: String, attributes: List<&2, Attribute>, timestamp: Timestamp) -> SpanEvent:
+  SpanEvent{name, Attributes.from_list(attributes), AtTimestamp{timestamp}}
+
+# The event named `name` with the attributes, at an offset in milliseconds
+# from the span's start reading.
+def SpanEvent.at_offset(name: String, attributes: List<&2, Attribute>, milliseconds: Nat) -> SpanEvent:
+  SpanEvent{name, Attributes.from_list(attributes), AtOffset{milliseconds}}
+
+# The exception event with extra attributes: named `exception`, with
+# `exception.type` and `exception.message` as strings followed by the extra
+# attributes, at the timestamp (law exception_with_event). There is no stack
+# trace.
+def SpanEvent.exception_with(type_name: String, message: String, attributes: List<&2, Attribute>,
+  timestamp: Timestamp) -> SpanEvent:
+  SpanEvent.at("exception", Con{Attribute{"exception.type", StringValue{type_name}},
+    Con{Attribute{"exception.message", StringValue{message}}, attributes}}, timestamp)
+
+# The exception event: named `exception`, with `exception.type` and
+# `exception.message` as strings, at the timestamp (law exception_event).
+def SpanEvent.exception(type_name: String, message: String, timestamp: Timestamp) -> SpanEvent:
+  SpanEvent.exception_with(type_name, message, Nil{}, timestamp)
+
+# The name of an event.
+def SpanEvent.name(event: SpanEvent) -> String:
+  match event:
+    case SpanEvent{name, attributes, time}:
+      name
+
+# The attributes of an event, with their dropped count.
+def SpanEvent.attributes(event: SpanEvent) -> Attributes:
+  match event:
+    case SpanEvent{name, attributes, time}:
+      attributes
+
+# When the event happened: AtTimestamp{timestamp} or AtOffset{milliseconds}.
+def SpanEvent.time(event: SpanEvent) -> EventTime:
+  match event:
+    case SpanEvent{name, attributes, time}:
+      time
+
+# The event with its attributes re-enforced under limits, as a span stores
+# it (law within_event_and_link).
+def SpanEvent.within(limits: AttributeLimits, event: SpanEvent) -> SpanEvent:
+  match event:
+    case SpanEvent{name, attributes, time}:
+      SpanEvent{name, Attributes.within(limits, attributes), time}
+
+# The link to a span context, with the attributes (law link_readers).
+def Link.to(span_context: SpanContext, attributes: List<&2, Attribute>) -> Link:
+  Link{span_context, Attributes.from_list(attributes)}
+
+# The span context a link points to.
+def Link.span_context(link: Link) -> SpanContext:
+  match link:
+    case Link{span_context, attributes}:
+      span_context
+
+# The attributes of a link, with their dropped count.
+def Link.attributes(link: Link) -> Attributes:
+  match link:
+    case Link{span_context, attributes}:
+      attributes
+
+# The link with its attributes re-enforced under limits, as a span stores it
+# (law within_event_and_link).
+def Link.within(limits: AttributeLimits, link: Link) -> Link:
+  match link:
+    case Link{span_context, attributes}:
+      Link{span_context, Attributes.within(limits, attributes)}
+
+# Spans
+# =====
+#
+# A span (#6) is an affine value that its owner threads through the code:
+# every operation below is pure and answers the span, so recording needs no
+# effect and stays provable. A recording span, Recording{payload, data},
+# applies each operation to its data and passes the SDK's payload through
+# untouched (law recording_delegates); a non-recording span,
+# NonRecording{span_context}, accepts every operation and keeps nothing
+# (law non_recording_identity). Readers work on a copy: the span is Data,
+# and a caller marks it `+span` to read it and keep it.
+#
+# The span's limits apply as each operation runs: attributes follow the
+# collection's rules under the span's attribute limits (law
+# span_attribute_rules), an event or a link is appended while its count is
+# below the limit and dropped and counted once the limit is reached (laws
+# event_added, event_dropped, link_added, link_dropped), and the attributes
+# of an event and of a link are re-enforced under their own limits. The
+# decisions on computed checks go through small helpers that take the check
+# as a Bool, so that the proofs can rewrite it.
+#
+# An SDK's start slot builds a recording span with Span.recording, then
+# applies the start options' attributes and links with Span.set_attributes
+# and Span.add_links, so that the limits apply to them as to any other.
+# Ending a span, the effect that hands its data to the SDK, comes with the
+# SDK slots of a later ticket.
+
+# Whether one more item fits under an optional count: always without a
+# count, and while the length is below it with one.
+def Span.room(count: Maybe<&2, Nat>, length: Nat) -> Bool:
+  match count:
+    case None{}:
+      True{}
+    case Some{limit}:
+      Nat.is_lt(length, limit)
+
+# The items with one appended when it is kept, the items as they are when it
+# is dropped.
+def Span.kept(-A: Data, items: List<&2, A>, item: A, kept: Bool) -> List<&2, A>:
+  match kept:
+    case True{}:
+      List.append(&2, A, items, [item])
+    case False{}:
+      items
+
+# The dropped count, grown by one when the item is dropped.
+def Span.counted(dropped: Nat, kept: Bool) -> Nat:
+  match kept:
+    case True{}:
+      dropped
+    case False{}:
+      1n+dropped
+
+# New span data: the parts a span starts with, no attributes, events or
+# links, nothing dropped and the unset status (law new_data_readers).
+def SpanData.new(scope: InstrumentationScope, span_context: SpanContext, parent: Maybe<&2, SpanContext>, name: String,
+  kind: SpanKind, start_timestamp: Timestamp, start_reading: Nat, sampled: Bool, limits: SpanLimits) -> SpanData:
+  SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, Attributes.empty(), Nil{}, 0n,
+    Nil{}, 0n, Unset{}, limits}
+
+# The instrumentation scope of the tracer that started the span.
+def SpanData.scope(data: SpanData) -> InstrumentationScope:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      scope
+
+# The span's own span context.
+def SpanData.span_context(data: SpanData) -> SpanContext:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      span_context
+
+# The span context the span was started from; None{} for a root.
+def SpanData.parent(data: SpanData) -> Maybe<&2, SpanContext>:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      parent
+
+# The span's name.
+def SpanData.name(data: SpanData) -> String:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      name
+
+# The span's kind.
+def SpanData.kind(data: SpanData) -> SpanKind:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      kind
+
+# The timestamp the span started at.
+def SpanData.start_timestamp(data: SpanData) -> Timestamp:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      start_timestamp
+
+# The monotonic reading taken at start, in milliseconds, from which event
+# offsets are measured.
+def SpanData.start_reading(data: SpanData) -> Nat:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      start_reading
+
+# The sampled indication: whether the sampler marked the trace as sampled.
+def SpanData.is_sampled(data: SpanData) -> Bool:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      sampled
+
+# The span's attributes, with their dropped count.
+def SpanData.attributes(data: SpanData) -> Attributes:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      attributes
+
+# The span's events, in the order they were added.
+def SpanData.events(data: SpanData) -> List<&2, SpanEvent>:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      events
+
+# How many events the span limits dropped.
+def SpanData.dropped_events(data: SpanData) -> Nat:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      dropped_events
+
+# The span's links, in the order they were added.
+def SpanData.links(data: SpanData) -> List<&2, Link>:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      links
+
+# How many links the span limits dropped.
+def SpanData.dropped_links(data: SpanData) -> Nat:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      dropped_links
+
+# The span's status.
+def SpanData.status(data: SpanData) -> Status:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      status
+
+# The span limits the span enforces.
+def SpanData.limits(data: SpanData) -> SpanLimits:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      limits
+
+# The data with the key set to the value under the span's attribute limits
+# (law span_attribute_rules).
+def SpanData.set_attribute(data: SpanData, key: String, value: AttributeValue) -> SpanData:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, +limits}:
+      SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled,
+        Attributes.set_within(SpanLimits.span_attributes(limits), attributes, key, value), events, dropped_events, links,
+        dropped_links, status, limits}
+
+# The data with each attribute set in turn under the span's attribute
+# limits.
+def SpanData.set_attributes(data: SpanData, entries: List<&2, Attribute>) -> SpanData:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, +limits}:
+      SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled,
+        Attributes.set_all_within(SpanLimits.span_attributes(limits), attributes, entries), events, dropped_events, links,
+        dropped_links, status, limits}
+
+# The data with the link added: appended, its attributes re-enforced under
+# the link attribute limits, while the links are below the link count;
+# dropped and counted once the count is reached (laws link_added,
+# link_dropped).
+def SpanData.add_link(data: SpanData, link: Link) -> SpanData:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, +links, dropped_links, status, +limits}:
+      +kept = Span.room(SpanLimits.link_count(limits), List.length(&2, Link, links))
+      SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes, events, dropped_events,
+        Span.kept(Link, links, Link.within(SpanLimits.link_attributes(limits), link), kept), Span.counted(dropped_links, kept),
+        status, limits}
+
+# The data with each link added in turn: a fold of SpanData.add_link.
+def SpanData.add_links(data: SpanData, links: List<&2, Link>) -> SpanData:
+  List.foldl(~&2, ~Link, ~SpanData, ~SpanData.add_link, links, data)
+
+# The data with the status set over its status: ok is final (law
+# status_set).
+def SpanData.set_status(data: SpanData, status: Status) -> SpanData:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, current, limits}:
+      SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes, events, dropped_events,
+        links, dropped_links, Status.after(current, status), limits}
+
+# The data with the name replaced (law update_name_replaces).
+def SpanData.update_name(data: SpanData, name: String) -> SpanData:
+  match data:
+    case SpanData{scope, span_context, parent, previous, kind, start_timestamp, start_reading, sampled, attributes,
+      events, dropped_events, links, dropped_links, status, limits}:
+      SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes, events, dropped_events,
+        links, dropped_links, status, limits}
+
+# The data with the event added: appended, its attributes re-enforced under
+# the event attribute limits, while the events are below the event count;
+# dropped and counted once the count is reached (laws event_added,
+# event_dropped).
+def SpanData.add_event(data: SpanData, event: SpanEvent) -> SpanData:
+  match data:
+    case SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+      +events, dropped_events, links, dropped_links, status, +limits}:
+      +kept = Span.room(SpanLimits.event_count(limits), List.length(&2, SpanEvent, events))
+      SpanData{scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, attributes,
+        Span.kept(SpanEvent, events, SpanEvent.within(SpanLimits.event_attributes(limits), event), kept),
+        Span.counted(dropped_events, kept), links, dropped_links, status, limits}
+
+# The data with each event added in turn: a fold of SpanData.add_event.
+def SpanData.add_events(data: SpanData, events: List<&2, SpanEvent>) -> SpanData:
+  List.foldl(~&2, ~SpanEvent, ~SpanData, ~SpanData.add_event, events, data)
+
+# A recording span from its parts, as an SDK's start slot builds it after
+# sampling and identifier generation: the payload the SDK stores, the
+# tracer's scope, the span's own span context, the parent span context if
+# any, the name, the kind, the start timestamp, the monotonic reading taken
+# at start, the sampled indication and the span limits (law
+# recording_readers). It starts with no attributes, events or links; the
+# start options' attributes and links go through Span.set_attributes and
+# Span.add_links.
+def Span.recording(-P: Data, payload: P, scope: InstrumentationScope, span_context: SpanContext,
+  parent: Maybe<&2, SpanContext>, name: String, kind: SpanKind, start_timestamp: Timestamp, start_reading: Nat,
+  sampled: Bool, limits: SpanLimits) -> Span<P>:
+  Recording{payload, SpanData.new(scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, limits)}
+
+# A non-recording span carrying an optional span context, its parent's, or
+# the one an SDK chose for a dropped span (law non_recording_readers).
+def Span.non_recording(-P: Data, span_context: Maybe<&2, SpanContext>) -> Span<P>:
+  NonRecording{span_context}
+
+# Whether the span is recording: whether an SDK records what is set on it.
+# Instrumentation skips expensive attributes when it is not.
+def Span.is_recording(-P: Data, span: Span<P>) -> Bool:
+  match span:
+    case Recording{payload, data}:
+      True{}
+    case NonRecording{span_context}:
+      False{}
+
+# The span context of the span, to inject it or link to it: a recording
+# span's own, or the optional one a non-recording span carries.
+def Span.span_context(-P: Data, span: Span<P>) -> Maybe<&2, SpanContext>:
+  match span:
+    case Recording{payload, data}:
+      Some{SpanData.span_context(data)}
+    case NonRecording{span_context}:
+      span_context
+
+# The name of a recording span; None{} for a non-recording span, which keeps
+# none.
+def Span.name(-P: Data, span: Span<P>) -> Maybe<&2, String>:
+  match span:
+    case Recording{payload, data}:
+      Some{SpanData.name(data)}
+    case NonRecording{span_context}:
+      None{}
+
+# The data of a recording span, for tests and for SDKs; None{} for a
+# non-recording span, which keeps none.
+def Span.data(-P: Data, span: Span<P>) -> Maybe<&2, SpanData>:
+  match span:
+    case Recording{payload, data}:
+      Some{data}
+    case NonRecording{span_context}:
+      None{}
+
+# Set one attribute: the key takes the value under the span's attribute
+# limits, as Attributes.set_within sets it.
+def Span.set_attribute(-P: Data, span: Span<P>, key: String, value: AttributeValue) -> Span<P>:
+  match span:
+    case Recording{payload, data}:
+      Recording{payload, SpanData.set_attribute(data, key, value)}
+    case NonRecording{span_context}:
+      NonRecording{span_context}
+
+# Set several attributes, in order, each under the span's attribute limits
+# (law set_attributes_fold).
+def Span.set_attributes(-P: Data, span: Span<P>, entries: List<&2, Attribute>) -> Span<P>:
+  match span:
+    case Recording{payload, data}:
+      Recording{payload, SpanData.set_attributes(data, entries)}
+    case NonRecording{span_context}:
+      NonRecording{span_context}
+
+# Add a link, under the link count and the link attribute limits.
+def Span.add_link(-P: Data, span: Span<P>, link: Link) -> Span<P>:
+  match span:
+    case Recording{payload, data}:
+      Recording{payload, SpanData.add_link(data, link)}
+    case NonRecording{span_context}:
+      NonRecording{span_context}
+
+# Add several links, in order, each under the limits (law add_links_fold).
+def Span.add_links(-P: Data, span: Span<P>, links: List<&2, Link>) -> Span<P>:
+  match span:
+    case Recording{payload, data}:
+      Recording{payload, SpanData.add_links(data, links)}
+    case NonRecording{span_context}:
+      NonRecording{span_context}
+
+# Set the status: the last status set is kept, except that ok is final (law
+# ok_final).
+def Span.set_status(-P: Data, span: Span<P>, status: Status) -> Span<P>:
+  match span:
+    case Recording{payload, data}:
+      Recording{payload, SpanData.set_status(data, status)}
+    case NonRecording{span_context}:
+      NonRecording{span_context}
+
+# Update the name: the new name replaces the old (law update_name_replaces).
+def Span.update_name(-P: Data, span: Span<P>, name: String) -> Span<P>:
+  match span:
+    case Recording{payload, data}:
+      Recording{payload, SpanData.update_name(data, name)}
+    case NonRecording{span_context}:
+      NonRecording{span_context}
+
+# Add an event, under the event count and the event attribute limits.
+def Span.add_event(-P: Data, span: Span<P>, event: SpanEvent) -> Span<P>:
+  match span:
+    case Recording{payload, data}:
+      Recording{payload, SpanData.add_event(data, event)}
+    case NonRecording{span_context}:
+      NonRecording{span_context}
+
+# Add an event with an explicit timestamp: the event SpanEvent.at builds
+# (law event_shorthands).
+def Span.add_event_at(-P: Data, span: Span<P>, name: String, attributes: List<&2, Attribute>, timestamp: Timestamp) -> Span<P>:
+  Span.add_event(P, span, SpanEvent.at(name, attributes, timestamp))
+
+# Add a list of events, in order, each under the limits: how a span owner
+# records the observations a forked computation returned (law
+# add_events_fold).
+def Span.add_events(-P: Data, span: Span<P>, events: List<&2, SpanEvent>) -> Span<P>:
+  match span:
+    case Recording{payload, data}:
+      Recording{payload, SpanData.add_events(data, events)}
+    case NonRecording{span_context}:
+      NonRecording{span_context}
+
+# Record an exception with an explicit timestamp: the event named
+# `exception` with `exception.type` and `exception.message` (law
+# event_shorthands).
+def Span.record_exception(-P: Data, span: Span<P>, type_name: String, message: String, timestamp: Timestamp) -> Span<P>:
+  Span.add_event(P, span, SpanEvent.exception(type_name, message, timestamp))
+
+# Record an exception with extra attributes and an explicit timestamp.
+def Span.record_exception_with(-P: Data, span: Span<P>, type_name: String, message: String,
+  attributes: List<&2, Attribute>, timestamp: Timestamp) -> Span<P>:
+  Span.add_event(P, span, SpanEvent.exception_with(type_name, message, attributes, timestamp))

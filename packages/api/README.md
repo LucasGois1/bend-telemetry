@@ -11,10 +11,13 @@ of, or endorsed by, the OpenTelemetry project.
 
 **Status: in development.** This package holds the pure values of the API
 ([#4](https://github.com/LucasGois1/bend-telemetry/issues/4)): attribute
-values, attributes, span limits and timestamps; and the span context and the
-explicit context ([#5](https://github.com/LucasGois1/bend-telemetry/issues/5)).
-Spans, tracers, the SDK slots and the no-op implementation follow in later
-tickets, and nothing is published on BendHub yet.
+values, attributes, span limits and timestamps; the span context and the
+explicit context ([#5](https://github.com/LucasGois1/bend-telemetry/issues/5));
+and the span with its two states, recording and non-recording, its pure
+operations, its events, links, status, kinds, start options and
+instrumentation scope ([#6](https://github.com/LucasGois1/bend-telemetry/issues/6)).
+Tracers, span start and end, the SDK slots and the no-op implementation
+follow in later tickets, and nothing is published on BendHub yet.
 
 A program imports the package by its BendHub name and version, never by a
 relative path, and bend-trace-context beside it for the W3C Trace Context
@@ -41,6 +44,15 @@ is a complete program over these values with its exact output beside it.
 - [Timestamps](#timestamps): `Timestamp`
 - [Span context](#span-context): `SpanContext`, remote or local
 - [Context](#context): `Context`, the explicit context
+- [Instrumentation scope](#instrumentation-scope): `InstrumentationScope`
+- [Span options](#span-options): `SpanOptions` and the kinds, `SpanKind`
+- [Status](#status): `Status`
+- [Events](#events): `SpanEvent` and `EventTime`, with the
+  [exception event](#the-exception-event)
+- [Links](#links): `Link`
+- [Spans](#spans): `Span`, recording or non-recording, its
+  [operations](#operations), its [readers](#readers), its data `SpanData`
+  and the [span limits at work](#span-limits-at-work)
 - [Laws and proofs](#laws-and-proofs)
 - [Writing Bend with the package](#writing-bend-with-the-package)
 
@@ -343,6 +355,262 @@ def serve(span_context: Api.SpanContext) -> IO(Unit):
     handle(context)
 ```
 
+## Instrumentation scope
+
+`Api.InstrumentationScope` is the name, version, schema URL and attributes
+that identify the instrumentation that created a span, such as an HTTP
+instrumentation package. A tracer carries one, and so does every span it
+starts. The constructor builds it; the version and the schema URL are
+optional:
+
+```bend
+scope = Api.InstrumentationScope{"my-http-client", Some{"1.2.0"}, None{}, Api.Attributes.empty()}
+```
+
+| Reader | Answers |
+| --- | --- |
+| `Api.InstrumentationScope.name(scope)` | The name of the instrumentation, such as its package name |
+| `Api.InstrumentationScope.version(scope)` | `Some{version}`, or `None{}` |
+| `Api.InstrumentationScope.schema_url(scope)` | `Some{url}` of the semantic conventions it follows, or `None{}` |
+| `Api.InstrumentationScope.attributes(scope)` | Its attributes |
+
+Each reader answers the field the scope was built with (law
+`scope_readers`). The API keeps an empty name as given; what an SDK does
+with it belongs to the SDK's configuration and error handling.
+
+## Span options
+
+`Api.SpanOptions` is what instrumentation asks of a span it starts, beyond
+its name: the kind, the initial attributes and links, an optional start
+timestamp and whether the span is a root. The record is closed: build it
+from `Api.SpanOptions.default()` with the `with_` operations and read it
+with the readers, never by constructing or matching it, so that an option
+added later breaks no caller.
+
+| Operation | Answers |
+| --- | --- |
+| `Api.SpanOptions.default()` | The options of an internal span with no initial attributes or links, no start timestamp, and a parent taken from the context |
+| `Api.SpanOptions.with_kind(options, kind: SpanKind)` | The options with the kind |
+| `Api.SpanOptions.with_attributes(options, attributes: List<&2, Attribute>)` | The options with the initial attributes, in place of any |
+| `Api.SpanOptions.with_links(options, links: List<&2, Link>)` | The options with the links, in place of any |
+| `Api.SpanOptions.with_start_timestamp(options, timestamp: Timestamp)` | The options with an explicit start timestamp, in place of the SDK's clock |
+| `Api.SpanOptions.with_root(options, root: Bool)` | The options with the root indication: a root ignores the parent in the context and begins a new trace |
+| `Api.SpanOptions.kind`, `attributes`, `links`, `start_timestamp`, `is_root` | The readers: `start_timestamp` answers `Maybe<&2, Timestamp>` |
+
+The default is as stated, and each option set is what its reader answers
+(laws `default_options` and `options_set_then_read`). The SDK's start slot
+receives the options with the span's name: it sets the attributes and adds
+the links under the span's limits, and uses the start timestamp in place
+of its clock when one was given.
+
+`Api.SpanKind` is how a span relates to its parent and its children in the
+trace: `Api.Internal{}`, the default; `Api.Server{}` and `Api.Client{}`,
+which frame a remote request; `Api.Producer{}` and `Api.Consumer{}`, which
+frame a message.
+
+## Status
+
+`Api.Status` is the outcome of a span: `Api.Unset{}`, `Api.Ok{}` or
+`Api.Error{description}`. A description exists only in the error variant:
+`Api.Status.description(status)` answers `Some{description}` for an error
+and `None{}` for the other two (law `status_description`). Setting a status
+on a span keeps the last status set, except that ok is final: once a span
+owner has validated the span as ok, a later status is ignored (laws
+`status_after`, `status_set` and `ok_final`). `Api.Status.after(current,
+next)` is that transition, which `Span.set_status` applies.
+
+## Events
+
+An event is a named, timestamped record with attributes on a span; a
+recorded exception is an event. The type is `Api.SpanEvent`, since Base's
+`Event` is the window event, and its time is an `Api.EventTime`: an explicit
+timestamp, `Api.AtTimestamp{timestamp}`, or an offset in milliseconds from
+the span's start reading, `Api.AtOffset{milliseconds}`.
+
+| Constructor | Builds |
+| --- | --- |
+| `Api.SpanEvent.at(name, attributes: List<&2, Attribute>, timestamp)` | An event at an explicit timestamp |
+| `Api.SpanEvent.at_offset(name, attributes, milliseconds: Nat)` | An event at an offset from the span's start reading |
+| `Api.SpanEvent.exception(type_name, message, timestamp)` | The [exception event](#the-exception-event) |
+| `Api.SpanEvent.exception_with(type_name, message, attributes, timestamp)` | The exception event with extra attributes |
+
+| Reader | Answers |
+| --- | --- |
+| `Api.SpanEvent.name(event)` | The name |
+| `Api.SpanEvent.attributes(event)` | The attributes, an `Attributes` with its own dropped count |
+| `Api.SpanEvent.time(event)` | `Api.AtTimestamp{timestamp}` or `Api.AtOffset{milliseconds}` |
+
+Each reader answers what the event was built with (law `event_readers`). An
+offset is how the effectful addition of a later ticket records an event
+without a timestamp: it reads Base's monotonic clock and stores the
+milliseconds since the span's start reading, and the SDK resolves offsets
+to wall time at the end, from the start timestamp. Events therefore have at
+least millisecond precision, as the specification requires; an explicit
+timestamp keeps its own. An exporter or an SDK matches the two
+constructors of `EventTime`.
+
+A span adds an event under its own limits, so an author builds events with
+no limits in sight: a forked computation returns its observations as a
+list of events, and the span owner adds them.
+`Api.SpanEvent.within(limits: AttributeLimits, event)` is the event as a
+span stores it, with its attributes re-enforced under the limits by
+`Api.Attributes.within(limits, attributes)`: the attributes set again in
+order under the limits, starting from no attributes and the count already
+dropped, so that what the limits drop now adds to it (laws
+`attributes_within`, `within_event_and_link` and `event_limits_literal`).
+
+### The exception event
+
+`Api.SpanEvent.exception(type_name, message, timestamp)` is the event named
+`exception` with the attributes `exception.type` and `exception.message`,
+both strings given by the caller, at the timestamp (law `exception_event`).
+`Api.SpanEvent.exception_with(type_name, message, attributes, timestamp)`
+puts the extra attributes after those two, so an extra attribute with a
+standard key replaces the standard value in place (law
+`exception_with_event`). There is no stack trace. `Span.record_exception`
+and `Span.record_exception_with` add these events to a span.
+
+## Links
+
+A link is a reference from a span to another span context, with
+attributes, for causal relations that are not parent and child.
+`Api.Link.to(span_context, attributes: List<&2, Attribute>)` builds one;
+`Api.Link.span_context(link)` and `Api.Link.attributes(link)` read it, the
+attributes as an `Attributes` with its own dropped count (law
+`link_readers`). `Api.Link.within(limits: AttributeLimits, link)` is the
+link as a span stores it, with its attributes re-enforced under the limits,
+as for an event.
+
+## Spans
+
+`Api.Span<P>` is a span whose SDK payload type is `P`: a `Data` type the SDK
+chooses to carry its configuration in every recording span, so that ending
+a span needs nothing but the span. The API never inspects the payload. A
+span has two states:
+
+| State | Holds | Built by |
+| --- | --- | --- |
+| A recording span, `Api.Recording{payload, data}` | The payload and the span's data, an `Api.SpanData` | `Api.Span.recording(P, payload, scope, span_context, parent, name, kind, start_timestamp, start_reading, sampled, limits)` |
+| A non-recording span, `Api.NonRecording{span_context}` | Only an optional span context, its parent's | `Api.Span.non_recording(P, span_context: Maybe<&2, SpanContext>)` |
+
+A span is an affine `Data` value that its owner threads through the code:
+every operation below is pure and answers the span, so recording needs no
+effect and stays provable, and a forked computation receives the context,
+not the span, and returns its observations as events. Ending a span, the
+one effect, which hands a recording span's data and payload to the SDK,
+comes with the SDK slots of a later ticket, as do the tracers that start
+spans. An SDK's start slot builds a recording span with `Api.Span.recording`
+after sampling and identifier generation, with the span's own span context,
+the parent span context from the context if any, the start timestamp, the
+monotonic reading taken at start, the sampled indication and the span
+limits; it then applies the start options' attributes and links with
+`set_attributes` and `add_links`, so that the limits apply to them as to
+any other. The no-op start, of a later ticket, builds a non-recording span
+carrying the parent's span context, so that propagation continues.
+
+`P` is the first argument of every operation, erased at run time. The
+repository's consumer uses `Unit`:
+
+```bend
+span = Api.Span.set_attribute(Unit, span, "http.request.method", Api.StringValue{"GET"})
+```
+
+### Operations
+
+Each operation answers the span. On a recording span it is the operation
+on the span's data, with the payload passed through untouched (law
+`recording_delegates`); on a non-recording span every operation answers the
+span unchanged (law `non_recording_identity`), so instrumentation has one
+code path whether or not an SDK records.
+
+| Operation | On a recording span |
+| --- | --- |
+| `Api.Span.set_attribute(P, span, key, value)` | Sets the key to the value under the span's attribute limits, as [`Attributes.set_within`](#span-limits) does |
+| `Api.Span.set_attributes(P, span, attributes: List<&2, Attribute>)` | Sets each attribute in turn, under the limits |
+| `Api.Span.add_link(P, span, link)` | Appends the link, with its attributes under the link attribute limits, while the links are below the link count; drops and counts it once the count is reached |
+| `Api.Span.add_links(P, span, links: List<&2, Link>)` | Adds each link in turn |
+| `Api.Span.set_status(P, span, status)` | Sets the status; ok is final |
+| `Api.Span.update_name(P, span, name)` | Replaces the name |
+| `Api.Span.add_event(P, span, event: SpanEvent)` | Appends the event, with its attributes under the event attribute limits, while the events are below the event count; drops and counts it once the count is reached |
+| `Api.Span.add_event_at(P, span, name, attributes, timestamp)` | Adds the event `SpanEvent.at` builds: an event with an explicit timestamp |
+| `Api.Span.add_events(P, span, events: List<&2, SpanEvent>)` | Adds each event in turn: how a span owner records the observations a forked computation returned |
+| `Api.Span.record_exception(P, span, type_name, message, timestamp)` | Adds the exception event |
+| `Api.Span.record_exception_with(P, span, type_name, message, attributes, timestamp)` | Adds the exception event with extra attributes |
+
+The attributes of a span follow the rules of the collection under the
+span's attribute limits, so every law of [attributes](#attributes) and of
+[span limits](#span-limits) holds of them (law `span_attribute_rules`);
+setting several attributes, adding several events and adding several links
+are folds of the single operations (laws `set_attributes_fold`,
+`add_events_fold` and `add_links_fold`); an update replaces the name (law
+`update_name_replaces`); and the shorthands add exactly the events their
+constructors build (law `event_shorthands`).
+
+### Readers
+
+Readers work on a copy: the span is `Data`, so a caller marks it `+span` to
+read it and keep it.
+
+| Reader | Answers |
+| --- | --- |
+| `Api.Span.is_recording(P, span)` | `True{}` for a recording span, `False{}` for a non-recording one: instrumentation skips expensive attributes when it is `False{}` |
+| `Api.Span.span_context(P, span)` | `Some{span_context}` of a recording span, to inject it or link to it; the optional span context a non-recording span carries |
+| `Api.Span.name(P, span)` | `Some{name}`, or `None{}` for a non-recording span, which keeps none |
+| `Api.Span.data(P, span)` | `Some{data}`, or `None{}` for a non-recording span |
+
+A recording span built from parts is recording and answers the span
+context, the name and the data it was built with; a non-recording span is
+not recording, answers its optional span context, and has no name and no
+data (laws `recording_readers` and `non_recording_readers`).
+
+### Span data
+
+`Api.SpanData` is everything a recording span holds but the payload: what
+the SDK's end slot receives and an exporter encodes. `Api.SpanData.new(scope,
+span_context, parent, name, kind, start_timestamp, start_reading, sampled,
+limits)` is the data a span starts with, and each reader answers the field
+it was built with (law `new_data_readers`):
+
+| Reader | Answers |
+| --- | --- |
+| `Api.SpanData.scope(data)` | The instrumentation scope of the tracer that started the span |
+| `Api.SpanData.span_context(data)` | The span's own span context |
+| `Api.SpanData.parent(data)` | `Some{parent}` it was started from, or `None{}` for a root |
+| `Api.SpanData.name(data)` | The name |
+| `Api.SpanData.kind(data)` | The kind |
+| `Api.SpanData.start_timestamp(data)` | The timestamp it started at |
+| `Api.SpanData.start_reading(data)` | The monotonic reading taken at start, in milliseconds, from which event offsets are measured |
+| `Api.SpanData.is_sampled(data)` | The sampled indication |
+| `Api.SpanData.attributes(data)` | The attributes, with their dropped count; empty at start |
+| `Api.SpanData.events(data)` | The events, in the order added; none at start |
+| `Api.SpanData.dropped_events(data)` | How many events the limits dropped |
+| `Api.SpanData.links(data)` | The links, in the order added; none at start |
+| `Api.SpanData.dropped_links(data)` | How many links the limits dropped |
+| `Api.SpanData.status(data)` | The status; `Api.Unset{}` at start |
+| `Api.SpanData.limits(data)` | The span limits the span enforces |
+
+The operations of a recording span are `Api.SpanData.set_attribute`,
+`set_attributes`, `add_link`, `add_links`, `set_status`, `update_name`,
+`add_event` and `add_events` on its data, with the same arguments after the
+data; the laws of events and links are stated on them. An SDK and an
+exporter read the data with the readers or by matching the constructor
+`Api.SpanData{...}`, whose fields are the readers' in that order.
+
+### Span limits at work
+
+A span's limits apply as each operation runs. An event or a link is kept
+while its count is below the limit, with its attributes re-enforced under
+the limits per event or per link, and dropped and counted once the limit is
+reached; without a count limit, everything is kept; and the count never
+exceeds the limit (laws `event_added`, `event_dropped`, `event_unlimited`
+and `events_bounded`, and their link counterparts). Under limits of two
+attributes of at most eight characters, four events of two attributes and
+one link of one attribute, the consumer sets three attributes, adds two
+links and six events, and reads back two attributes with one dropped, one
+link with one dropped, four events with two dropped, and `exception.type`
+cut to `TimeoutE`; its exact output is in
+[tests/consumer/expected.txt](../../tests/consumer/expected.txt).
+
 ## Laws and proofs
 
 [LAWS.bend](LAWS.bend) states the package's claims and
@@ -360,6 +628,16 @@ The laws of the span context and the context say that the variant tells
 remote from local, that each reader agrees with the field of the wrapped
 context, and that a context answers the span context set on it and none when
 it is empty or cleared.
+
+The laws of spans say that every operation on a recording span is the
+operation on its data with the payload untouched, and the identity on a
+non-recording span; that the span's attributes follow the collection's rules
+under its limits; that ok is final and a description exists only with
+error; that an update replaces the name; that events and links are appended
+while their counts leave room, dropped and counted once they do not, and
+never exceed their limits; that adding a list of events or links is a fold
+of single additions; that the exception event carries its two attributes;
+and that the readers answer the fields set at construction.
 
 Where the universal statement is beyond what the checker computes, a law
 states the property on literal values and the checker computes it: the
@@ -381,7 +659,26 @@ their expected output natively and on Node.
   computed value: give the result of `Api.Attributes.get` or
   `Api.Int64.read` to a helper `def` that matches on its parameter.
 - `Api.Int64.read` and `Api.AttributeValue.bytes` answer `Maybe`; the span
-  operations that follow never fail at run time (spec #2, "Errors").
+  operations never fail at run time (spec #2, "Errors").
+- A `Data` type with a parameter, such as `Api.Span<P>`, takes the parameter
+  as the erased first argument of its operations: `Api.Span.name(Unit,
+  span)`. A template argument such as the `~f` of `Maybe.show` must be a
+  plain function: a definition with a `+` parameter is passed as a closed
+  lambda, `~(data => show_counts(data))`, as the consumer does.
+- On the native lane, Bend 2.0.34 keeps a value that a definition builds or
+  destructures unboxed, one register per scalar field, and inlines every
+  non-recursive definition into its caller. A span is about 150 registers,
+  most of them the digits of its span context and its parent's; a segment
+  may carry 247, and large segments can defeat clang. Today a pure
+  definition that applies three or more operations to one span, a function
+  that takes a span and two span contexts, or a loop that reads a reusable
+  span twice does not compile natively, while the JavaScript lane has no
+  such limit. The shapes that compile are those of the consumer: carry a
+  span between steps inside a one-element list, which Bend keeps boxed,
+  apply one operation per iteration of a recursive definition, read a span
+  once per helper, and match `SpanData` once rather than calling several
+  readers on a copy. The limit and its options are tracked in
+  [#60](https://github.com/LucasGois1/bend-telemetry/issues/60).
 - Numbers have no hexadecimal literals, and a `Nat` literal stops at
   `4294967295n`: build a larger `Nat` with `Nat.mul` and `Nat.add`, as the
   consumer builds a count of milliseconds.
