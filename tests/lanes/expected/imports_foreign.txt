@@ -1,0 +1,4 @@
+scanned: tests/lanes/fixtures/imports_foreign.bend
+note: not followed: bend-trace-context@0.2.0.0/trace_context.bend (a package of another repository), imported at tests/lanes/fixtures/imports_foreign.bend:2
+note: not followed: 0x0123456789abcdef0123456789abcdef/main.bend (a package by hash), imported at tests/lanes/fixtures/imports_foreign.bend:3
+PASS: lint-lanes (programs 1, files 1)

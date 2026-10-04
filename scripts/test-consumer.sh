@@ -6,13 +6,16 @@
 #
 #   ./scripts/test-consumer.sh [native|node] [repository] [full-sha]
 #
-# The programs come from the clone: the consumer of tests/consumer/ and the
-# README's marked `readme-bend` example. Each runs directly on the clone's
-# compiler (in-process, the JavaScript lane); then it is compiled natively
-# (`-o`) in native mode, or to JavaScript and run with `node` in node mode.
-# Every output is compared with its literal expectation. Evidence goes to
-# build/consumer-<mode>/. The repository defaults to this checkout and the
-# commit to its HEAD; the runner tests commits, not uncommitted edits.
+# The programs come from the clone's tests/lanes/programs.txt, which names the
+# lanes of each: the consumer of tests/consumer/ and the README's marked
+# `readme-bend` example today. A program on the javascript lane runs directly
+# on the clone's compiler (in-process, the JavaScript lane); one on the native
+# lane is compiled (`-o`) and run in native mode, and one on the node lane is
+# compiled to JavaScript and run with `node` in node mode. The same list gives
+# scripts/lint-lanes.sh the programs that it checks for effects that node
+# cannot run. Every output is compared with its literal expectation. Evidence
+# goes to build/consumer-<mode>/. The repository defaults to this checkout and
+# the commit to its HEAD; the runner tests commits, not uncommitted edits.
 set -eu
 
 repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
@@ -27,6 +30,11 @@ if [ "${1:-}" = --run-programs ]; then
   cd "$test_dir"
   mkdir -p build
   status=0
+  on_lane() {
+    # on_lane LANES LANE: whether the comma-separated LANES name LANE.
+    case ",$1," in *",$2,"*) return 0 ;; esac
+    return 1
+  }
   compare() {
     if diff -u "$1" "$2" > "$evidence_dir/$3.diff" 2>&1; then
       rm -f "$evidence_dir/$3.diff"
@@ -41,28 +49,34 @@ if [ "${1:-}" = --run-programs ]; then
     # and printing its stderr on failure.
     label=$1
     shift
-    if "$@" > "$evidence_dir/$label.stdout" 2> "$evidence_dir/$label.stderr"; then
+    if "$@" < /dev/null > "$evidence_dir/$label.stdout" 2> "$evidence_dir/$label.stderr"; then
       return 0
     fi
     echo "FAIL: $label:" >&2
     cat "$evidence_dir/$label.stderr" >&2
     return 1
   }
-  for program in consumer readme-bend; do
+  while read -r program lanes; do
     passed=1
-    if run_step "$program-direct" "$clone/bend" "$program.bend"; then
-      compare "$program.expected" "$evidence_dir/$program-direct.stdout" "$program-direct" || passed=0
-    else
-      passed=0
+    ran=0
+    if on_lane "$lanes" javascript; then
+      ran=1
+      if run_step "$program-direct" "$clone/bend" "$program.bend"; then
+        compare "$program.expected" "$evidence_dir/$program-direct.stdout" "$program-direct" || passed=0
+      else
+        passed=0
+      fi
     fi
-    if [ "$mode" = node ]; then
+    if [ "$mode" = node ] && on_lane "$lanes" node; then
+      ran=1
       if run_step "$program-compile" "$clone/bend" "$program.bend" -o "build/$program.js" \
         && run_step "$program-compiled" node "build/$program.js"; then
         compare "$program.expected" "$evidence_dir/$program-compiled.stdout" "$program-compiled" || passed=0
       else
         passed=0
       fi
-    else
+    elif [ "$mode" = native ] && on_lane "$lanes" native; then
+      ran=1
       if run_step "$program-compile" "$clone/bend" "$program.bend" -o "build/$program" \
         && run_step "$program-compiled" "./build/$program"; then
         compare "$program.expected" "$evidence_dir/$program-compiled.stdout" "$program-compiled" || passed=0
@@ -70,12 +84,14 @@ if [ "${1:-}" = --run-programs ]; then
         passed=0
       fi
     fi
-    if [ "$passed" = 1 ]; then
-      echo "PASS: independent $program ($mode)"
-    else
+    if [ "$passed" = 0 ]; then
       status=1
+    elif [ "$ran" = 0 ]; then
+      echo "SKIP: independent $program ($mode): it is on no lane of this mode"
+    else
+      echo "PASS: independent $program ($mode)"
     fi
-  done
+  done < programs
   exit "$status"
 fi
 
@@ -115,11 +131,29 @@ printf 'repository: %s\ncommit: %s\nmode: %s\n' "$source_repo" "$revision" "$mod
   exit 1
 }
 
-cp "$clone/tests/consumer/main.bend" "$test_dir/consumer.bend"
-cp "$clone/tests/consumer/expected.txt" "$test_dir/consumer.expected"
-"$clone/scripts/doc-block.sh" readme-bend bend "$clone/README.md" > "$test_dir/readme-bend.bend"
-"$clone/scripts/doc-block.sh" readme-bend-output text "$clone/README.md" > "$test_dir/readme-bend.expected"
-cp "$test_dir/consumer.bend" "$test_dir/consumer.expected" "$test_dir/readme-bend.bend" "$test_dir/readme-bend.expected" "$evidence_dir/"
+materialize() {
+  # materialize SOURCE FENCE DESTINATION: a program, or what it prints, is a
+  # file of the clone or FILE#NAME for the block that FILE marks NAME.
+  case "$1" in
+    *'#'*) "$clone/scripts/doc-block.sh" "${1#*#}" "$2" "$clone/${1%%#*}" > "$3" ;;
+    *) cp "$clone/$1" "$3" ;;
+  esac
+}
+program_list="$clone/tests/lanes/programs.txt"
+[ -f "$program_list" ] || { echo "The clone has no tests/lanes/programs.txt." >&2; exit 1; }
+grep -v -E '^[[:space:]]*(#|$)' "$program_list" > "$test_dir/list" || true
+: > "$test_dir/programs"
+while read -r name source expected_source lanes extra; do
+  if [ -z "$lanes" ] || [ -n "$extra" ]; then
+    echo "tests/lanes/programs.txt: $name has not four columns: name, program, expected, runs-on." >&2
+    exit 1
+  fi
+  materialize "$source" bend "$test_dir/$name.bend"
+  materialize "$expected_source" text "$test_dir/$name.expected"
+  cp "$test_dir/$name.bend" "$test_dir/$name.expected" "$evidence_dir/"
+  printf '%s %s\n' "$name" "$lanes" >> "$test_dir/programs"
+done < "$test_dir/list"
+[ -s "$test_dir/programs" ] || { echo "tests/lanes/programs.txt lists no program." >&2; exit 1; }
 
 LOCAL_HUB_SOURCE="$clone" LOCAL_HUB_DIR="$test_dir/hub" "$clone/scripts/local-hub.sh" \
   sh "$clone/scripts/test-consumer.sh" --run-programs "$mode" "$test_dir" "$clone" "$evidence_dir"

@@ -1,0 +1,4 @@
+# A list with a program that sleeps and is not on the node lane, as a consumer
+# of the SDK's pipeline will be: only the programs on the node lane are linted.
+clean    tests/lanes/fixtures/not_effects.bend  tests/lanes/expected/not_effects.txt  native,javascript,node
+sleeper  tests/lanes/fixtures/sleeps.bend       tests/lanes/expected/sleeps.txt       native,javascript

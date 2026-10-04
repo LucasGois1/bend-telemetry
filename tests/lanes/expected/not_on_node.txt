@@ -1,0 +1,2 @@
+scanned: tests/lanes/fixtures/not_effects.bend
+PASS: lint-lanes (programs 1, files 1)

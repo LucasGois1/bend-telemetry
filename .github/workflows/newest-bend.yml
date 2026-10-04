@@ -1,8 +1,11 @@
 # Every week, and on demand, run the gates on the newest Bend release in
 # place of the pinned one: scripts/try-bend.sh pins that release in the
 # runner's checkout only and commits the result there, so that every gate,
-# which tests a commit, runs on it. Nothing is pushed. This is not a required
-# check; a failed run tells the maintainer that a move needs work.
+# which tests a commit, runs on it. Nothing is pushed. The jobs mirror the
+# native and node jobs of ci.yml, on the same systems and Node versions, which
+# is the job convention of CONTRIBUTING.md; quality and semconv do not depend
+# on the Bend release. This is not a required check; a failed run tells the
+# maintainer that a move needs work.
 name: Newest Bend
 
 on:
@@ -52,28 +55,37 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  javascript:
-    name: javascript
+  node:
+    name: node (${{ matrix.node }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # The Node versions of the required node job in ci.yml.
+        node: ['22.18.0', '22', '24.0.0', '24']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '24'
+          node-version: ${{ matrix.node }}
           package-manager-cache: false
       - name: Pin and install the newest Bend in this checkout
         run: ./scripts/try-bend.sh
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - name: Proofs and manifests
+        run: ./scripts/validate.sh
       - name: Independent consumer, compiled to JavaScript
         run: ./scripts/test-consumer.sh node "$GITHUB_WORKSPACE" "$(git rev-parse HEAD)"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ !cancelled() }}
         with:
-          name: newest-bend-javascript-${{ github.run_id }}
-          path: build/consumer-node/
+          name: newest-bend-node-${{ matrix.node }}-${{ github.run_id }}
+          path: |
+            build/validation/
+            build/consumer-node/
           if-no-files-found: ignore
           retention-days: 14

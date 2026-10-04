@@ -1,0 +1,23 @@
+# The programs that scripts/test-consumer.sh runs, and the lanes of each: the
+# lane matrix of the toolchain, program by program.
+#
+# One program per line, in four columns separated by white space:
+#
+#   name      the program's name in the runner's evidence
+#   program   a file of the repository, or FILE#NAME for the code block that
+#             FILE marks <!-- test:NAME:start --> (scripts/doc-block.sh)
+#   expected  what the program prints, in the same notation; a block holds text
+#   runs-on   where it runs, from these, separated by commas:
+#               native      the C build, compiled with `-o` and run
+#               javascript  in-process, `./bend file.bend`: the JavaScript lane
+#               node        compiled to JavaScript with `-o x.js` and run with
+#                           node
+#
+# Node has no bun:ffi, which the effects that wait load, so only a program
+# with no such effect runs there (see "Lanes" in CONTRIBUTING.md): the lint,
+# scripts/lint-lanes.sh, fails when a program on the node lane, or a module
+# that it imports, names an effect that waits or reads the environment without
+# a guaranteed value. A program that cannot run under node leaves `node` out.
+#
+consumer     tests/consumer/main.bend   tests/consumer/expected.txt   native,javascript,node
+readme-bend  README.md#readme-bend      README.md#readme-bend-output  native,javascript,node
