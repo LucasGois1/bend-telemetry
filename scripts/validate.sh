@@ -3,7 +3,10 @@
 #
 #   - the proof gate of every package: `PROOF.bend --check-only` prints
 #     "ALL PROOFS CHECK", which Bend prints only when every law holds and
-#     nothing the proofs import relies on `@unsafe` or foreign code;
+#     nothing the proofs import relies on `@unsafe` or foreign code. The
+#     checks run against the local hub (scripts/local-hub.sh), since a
+#     package's modules import the other packages of the working tree by
+#     their BendHub names, as the SDK imports the API;
 #   - the effects of the compiler's Base, which the lane lint must know: each
 #     one is flagged as an effect that waits or reviewed and left alone
 #     (scripts/lint-lanes.sh --base), so that a newer Bend with a new effect
@@ -16,23 +19,29 @@ set -eu
 repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_dir"
 build_dir=build/validation
+
+if [ "${1:-}" = --proofs ]; then
+  # The inner step, run by scripts/local-hub.sh with the hub's environment.
+  for proof in packages/*/PROOF.bend; do
+    [ -f "$proof" ] || { echo "No PROOF.bend under packages/." >&2; exit 1; }
+    package=$(basename -- "$(dirname -- "$proof")")
+    if ! ./bend "$proof" --check-only > "$build_dir/proofs-$package.txt" 2>&1; then
+      cat "$build_dir/proofs-$package.txt"
+      exit 1
+    fi
+    cat "$build_dir/proofs-$package.txt"
+    [ "$(head -n 1 "$build_dir/proofs-$package.txt")" = 'ALL PROOFS CHECK' ] || {
+      echo "The proof check of $package did not print ALL PROOFS CHECK first." >&2
+      exit 1
+    }
+    echo "PASS: proofs of $package"
+  done
+  exit 0
+fi
+
 rm -rf "$build_dir"
 mkdir -p "$build_dir"
-
-for proof in packages/*/PROOF.bend; do
-  [ -f "$proof" ] || { echo "No PROOF.bend under packages/." >&2; exit 1; }
-  package=$(basename -- "$(dirname -- "$proof")")
-  if ! ./bend "$proof" --check-only > "$build_dir/proofs-$package.txt" 2>&1; then
-    cat "$build_dir/proofs-$package.txt"
-    exit 1
-  fi
-  cat "$build_dir/proofs-$package.txt"
-  [ "$(head -n 1 "$build_dir/proofs-$package.txt")" = 'ALL PROOFS CHECK' ] || {
-    echo "The proof check of $package did not print ALL PROOFS CHECK first." >&2
-    exit 1
-  }
-  echo "PASS: proofs of $package"
-done
+./scripts/local-hub.sh sh ./scripts/validate.sh --proofs
 
 ./bend base > "$build_dir/base.txt"
 ./scripts/lint-lanes.sh --base "$build_dir/base.txt"

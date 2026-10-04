@@ -60,7 +60,8 @@ hand.) The two lane scripts are described under [Lanes](#lanes).
 `validate.sh` runs the proof gate of every package (`PROOF.bend
 --check-only` must print `ALL PROOFS CHECK`, which Bend prints only when
 every law holds and nothing the proofs import relies on `@unsafe` or foreign
-code), `scripts/check-package.sh`, which checks each package manifest
+code) against the local hub, since the SDK's modules import the API by its
+hub name, `scripts/check-package.sh`, which checks each package manifest
 against the working tree: name, version, entry module, declared hub
 dependencies against the modules' imports, and the LICENSE beside the entry,
 and the lane lint's list of effects against the compiler's Base (see
@@ -154,8 +155,11 @@ clock do not load it.
 program: each program that `scripts/test-consumer.sh` runs, with the lanes it
 runs on (`native`, `javascript`, `node`). The runner takes its programs from
 it, and runs each on the lanes of its row. A program that cannot run under
-Node leaves `node` out of its row, as the SDK's consumer will, and putting a
-program under Node takes that word in its row.
+Node leaves `node` out of its row, as the SDK's configuration consumer does,
+and putting a program under Node takes that word in its row. A program that
+is a file may declare the environment the runner sets for its runs: the file
+beside it with `.env` in place of `.bend`, one `NAME=value` per line, as
+`tests/consumer/sdk_config.env` does.
 
 `scripts/lint-lanes.sh` reads the programs on the node lane of the same list.
 It follows each program's imports (relative modules, and the packages of this

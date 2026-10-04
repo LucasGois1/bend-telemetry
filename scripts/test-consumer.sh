@@ -13,9 +13,12 @@
 # lane is compiled (`-o`) and run in native mode, and one on the node lane is
 # compiled to JavaScript and run with `node` in node mode. The same list gives
 # scripts/lint-lanes.sh the programs that it checks for effects that node
-# cannot run. Every output is compared with its literal expectation. Evidence
-# goes to build/consumer-<mode>/. The repository defaults to this checkout and
-# the commit to its HEAD; the runner tests commits, not uncommitted edits.
+# cannot run. A program that is a file may declare the environment its runs
+# get: the file beside it with `.env` in place of `.bend`, one NAME=value per
+# line, as the list's header says. Every output is compared with its literal
+# expectation. Evidence goes to build/consumer-<mode>/. The repository
+# defaults to this checkout and the commit to its HEAD; the runner tests
+# commits, not uncommitted edits.
 set -eu
 
 repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
@@ -45,10 +48,18 @@ if [ "${1:-}" = --run-programs ]; then
     return 1
   }
   run_step() {
-    # run_step LABEL COMMAND...: run a command, keeping its output as evidence
-    # and printing its stderr on failure.
+    # run_step LABEL COMMAND...: run a step of the current program, keeping
+    # its output as evidence and printing its stderr on failure. When the
+    # program declares an environment ($program.env, one NAME=value per
+    # line), every step of it runs with those variables set.
     label=$1
     shift
+    if [ -f "$program.env" ]; then
+      while IFS= read -r pair; do
+        set -- "$pair" "$@"
+      done < "$program.env"
+      set -- env "$@"
+    fi
     if "$@" < /dev/null > "$evidence_dir/$label.stdout" 2> "$evidence_dir/$label.stderr"; then
       return 0
     fi
@@ -151,6 +162,16 @@ while read -r name source expected_source lanes extra; do
   materialize "$source" bend "$test_dir/$name.bend"
   materialize "$expected_source" text "$test_dir/$name.expected"
   cp "$test_dir/$name.bend" "$test_dir/$name.expected" "$evidence_dir/"
+  # The environment a program that is a file declares beside itself, if any.
+  case "$source" in
+    *'#'*) ;;
+    *)
+      if [ -f "$clone/${source%.bend}.env" ]; then
+        cp "$clone/${source%.bend}.env" "$test_dir/$name.env"
+        cp "$test_dir/$name.env" "$evidence_dir/"
+      fi
+      ;;
+  esac
   printf '%s %s\n' "$name" "$lanes" >> "$test_dir/programs"
 done < "$test_dir/list"
 [ -s "$test_dir/programs" ] || { echo "tests/lanes/programs.txt lists no program." >&2; exit 1; }
