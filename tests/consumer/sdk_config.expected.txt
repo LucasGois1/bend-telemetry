@@ -1,0 +1,22 @@
+package: bend-telemetry-sdk
+disabled: False
+level: debug
+service name: Some(consumer)
+resource attributes: Some(deployment.environment=test,team=a%20b)
+sampler: traceidratio
+sampler arg: Some(0.25)
+exporter: console
+processors: 0
+batch: queue 2048, delay 250ms, export timeout None, batch 512
+span limits: attributes Some(20), length Some(64), events Some(128), links Some(2147483647), per event Some(7), per link Some(10)
+otlp: OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318, OTEL_EXPORTER_OTLP_TRACES_HEADERS=x-token=abc
+shutdown timeout: Some(10000)
+threshold precision: 4
+diagnostics: 2
+[warn] config: OTEL_SDK_DISABLED="yes" is not a Boolean (true or false); the value is ignored
+[warn] config: OTEL_BSP_MAX_QUEUE_SIZE="12x" is not an integer from 1 to 2147483647; the value is ignored
+reports: warn at debug True, debug at warn False, error at error True
+pinned: level error, sampler always_off
+defaults: disabled False, level info, sampler parentbased_always_on, exporter otlp, batch queue 2048, delay 5000ms, export timeout Some(30000), batch 512, shutdown timeout Some(10000)
+literal: level error, diagnostics 0
+decoded: 99 97 102 233 | 128512 | refused

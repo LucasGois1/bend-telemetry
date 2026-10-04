@@ -1,0 +1,13 @@
+{
+  "name": "bend-telemetry-sdk",
+  "version": "0.1.0-dev",
+  "description": "The OpenTelemetry tracing SDK for Bend: the package an application installs to record spans",
+  "license": "Apache-2.0",
+  "private": true,
+  "bend": {
+    "entry": "host.bend",
+    "dependencies": {
+      "bend-telemetry-api": "0.1.0.0"
+    }
+  }
+}

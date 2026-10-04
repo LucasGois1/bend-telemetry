@@ -19,5 +19,11 @@
 # that it imports, names an effect that waits or reads the environment without
 # a guaranteed value. A program that cannot run under node leaves `node` out.
 #
-consumer     tests/consumer/main.bend   tests/consumer/expected.txt   native,javascript,node
-readme-bend  README.md#readme-bend      README.md#readme-bend-output  native,javascript,node
+# A program that is a file may declare the environment the runner sets for
+# it: the file beside it with `.env` in place of `.bend`, one NAME=value per
+# line, such as tests/consumer/sdk_config.env. The runner sets those variables
+# for that program's runs and for nothing else.
+#
+consumer     tests/consumer/main.bend        tests/consumer/expected.txt             native,javascript,node
+readme-bend  README.md#readme-bend           README.md#readme-bend-output            native,javascript,node
+sdk-config   tests/consumer/sdk_config.bend  tests/consumer/sdk_config.expected.txt  native,javascript

@@ -25,7 +25,7 @@ All packages share one version and are released together; see
 | BendHub name | Role |
 | --- | --- |
 | `bend-telemetry-api` | The tracing API that instrumented code depends on; it works alone through its no-op implementation |
-| `bend-telemetry-sdk` | The tracing SDK: sampling, span processing, resources, and the standard-output and in-memory exporters |
+| `bend-telemetry-sdk` | The tracing SDK: sampling, span processing, resources, and the standard-output and in-memory exporters; in development, today its configuration from code and from the `OTEL_*` variables, and its diagnostics ([README](packages/sdk/README.md)) |
 | `bend-telemetry-exporter-otlp` | Export to an OTLP endpoint |
 | `bend-telemetry-instrumentation-http` | Spans and context propagation for HTTP on bend-kit |
 | `bend-telemetry-semconv` | Semantic conventions v1.44.0: attribute names, enumeration values and the schema URL, generated with weaver ([README](packages/semconv/README.md)) |
