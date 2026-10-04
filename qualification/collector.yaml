@@ -1,0 +1,35 @@
+# The OpenTelemetry Collector of the qualification harness. It receives OTLP
+# on every interface of its container (the receivers' default, localhost, is
+# unreachable from the host) and exports each request three ways: as a line
+# of OTLP/JSON in the file that the verifier reads, flushed every second; to
+# Tempo over OTLP/HTTP; and as a summary in its own log. The health check
+# answers on port 13133, which scripts/qualify.sh polls from the host because
+# the image has no shell.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  file:
+    path: /qualification/output/traces.jsonl
+    format: json
+    flush_interval: 1s
+  otlp_http:
+    endpoint: http://tempo:4318
+  debug:
+    verbosity: basic
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [file, otlp_http, debug]

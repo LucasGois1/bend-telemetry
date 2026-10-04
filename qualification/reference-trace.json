@@ -1,0 +1,148 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "bend-qualification" } },
+          { "key": "telemetry.sdk.language", "value": { "stringValue": "bend" } },
+          { "key": "telemetry.sdk.name", "value": { "stringValue": "bend-telemetry-sdk" } },
+          { "key": "telemetry.sdk.version", "value": { "stringValue": "0.1.0" } }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.44.0",
+      "scopeSpans": [
+        {
+          "scope": { "name": "bend-telemetry-qualification", "version": "0.1.0" },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.44.0",
+          "spans": [
+            {
+              "traceId": "2904730afd20f69baabe13593b08a9a0",
+              "spanId": "90fc8028d84b8528",
+              "flags": 259,
+              "name": "GET /users/:id",
+              "kind": 2,
+              "startTimeUnixNano": "1790856000123456789",
+              "endTimeUnixNano": "1790856000373456789",
+              "attributes": [
+                { "key": "qualification.string", "value": { "stringValue": "quote \" backslash \\ newline \n tab \t: é ✓ 𝄞" } },
+                { "key": "qualification.boolean", "value": { "boolValue": true } },
+                { "key": "qualification.int", "value": { "intValue": "-9007199254740993" } },
+                { "key": "qualification.double", "value": { "doubleValue": 2.5 } },
+                { "key": "qualification.strings", "value": { "arrayValue": { "values": [{ "stringValue": "alpha" }, { "stringValue": "beta" }] } } },
+                { "key": "qualification.booleans", "value": { "arrayValue": { "values": [{ "boolValue": true }, { "boolValue": false }] } } },
+                { "key": "qualification.ints", "value": { "arrayValue": { "values": [{ "intValue": "-1" }, { "intValue": "0" }, { "intValue": "9223372036854775807" }] } } },
+                { "key": "qualification.doubles", "value": { "arrayValue": { "values": [{ "doubleValue": -0.375 }, { "doubleValue": 0.5 }, { "doubleValue": 3 }] } } },
+                { "key": "qualification.bytes", "value": { "bytesValue": "AAEC+/3+/w==" } },
+                { "key": "qualification.map", "value": { "kvlistValue": { "values": [
+                  { "key": "nested.string", "value": { "stringValue": "" } },
+                  { "key": "nested.boolean", "value": { "boolValue": false } },
+                  { "key": "nested.int", "value": { "intValue": "0" } },
+                  { "key": "nested.map", "value": { "kvlistValue": { "values": [
+                    { "key": "deep.mixed", "value": { "arrayValue": { "values": [{ "stringValue": "x" }, { "intValue": "1" }] } } }
+                  ] } } }
+                ] } } },
+                { "key": "qualification.empty", "value": {} }
+              ],
+              "status": { "code": 1 }
+            },
+            {
+              "traceId": "2904730afd20f69baabe13593b08a9a0",
+              "spanId": "a4e46f4e67ea0510",
+              "parentSpanId": "90fc8028d84b8528",
+              "flags": 259,
+              "name": "GET",
+              "kind": 3,
+              "startTimeUnixNano": "1790856000133456789",
+              "endTimeUnixNano": "1790856000183456789",
+              "attributes": [
+                { "key": "http.request.method", "value": { "stringValue": "GET" } },
+                { "key": "url.full", "value": { "stringValue": "http://users.internal/users/42" } },
+                { "key": "http.response.status_code", "value": { "intValue": "503" } },
+                { "key": "error.type", "value": { "stringValue": "503" } }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1790856000182456789",
+                  "name": "exception",
+                  "attributes": [
+                    { "key": "exception.type", "value": { "stringValue": "HttpError" } },
+                    { "key": "exception.message", "value": { "stringValue": "503 Service Unavailable" } }
+                  ]
+                }
+              ],
+              "links": [
+                {
+                  "traceId": "002e51eb845cfe1aff706c8272403d51",
+                  "spanId": "eebee14435ba5a62",
+                  "traceState": "rojo=00f067aa0ba902b7,congo=t61rcWkgMzE",
+                  "flags": 769,
+                  "attributes": [
+                    { "key": "qualification.link.reason", "value": { "stringValue": "earlier attempt" } },
+                    { "key": "qualification.link.attempt", "value": { "intValue": "1" } }
+                  ]
+                }
+              ],
+              "status": { "code": 2, "message": "503 Service Unavailable" }
+            },
+            {
+              "traceId": "2904730afd20f69baabe13593b08a9a0",
+              "spanId": "8bbf835aef3ff453",
+              "parentSpanId": "90fc8028d84b8528",
+              "flags": 259,
+              "name": "render",
+              "kind": 1,
+              "startTimeUnixNano": "1790856000193456789",
+              "endTimeUnixNano": "1790856000363456789",
+              "attributes": [
+                { "key": "qualification.string", "value": { "stringValue": "quote \" backslash \\ newline \n tab \t: é ✓ 𝄞" } },
+                { "key": "qualification.boolean", "value": { "boolValue": true } },
+                { "key": "qualification.int", "value": { "intValue": "-9007199254740993" } },
+                { "key": "qualification.double", "value": { "doubleValue": 2.5 } },
+                { "key": "qualification.strings", "value": { "arrayValue": { "values": [{ "stringValue": "alpha" }, { "stringValue": "beta" }] } } },
+                { "key": "qualification.booleans", "value": { "arrayValue": { "values": [{ "boolValue": true }, { "boolValue": false }] } } },
+                { "key": "qualification.ints", "value": { "arrayValue": { "values": [{ "intValue": "-1" }, { "intValue": "0" }, { "intValue": "9223372036854775807" }] } } },
+                { "key": "qualification.doubles", "value": { "arrayValue": { "values": [{ "doubleValue": -0.375 }, { "doubleValue": 0.5 }, { "doubleValue": 3 }] } } },
+                { "key": "qualification.bytes", "value": { "bytesValue": "AAEC+/3+/w==" } },
+                { "key": "qualification.map", "value": { "kvlistValue": { "values": [
+                  { "key": "nested.string", "value": { "stringValue": "" } },
+                  { "key": "nested.boolean", "value": { "boolValue": false } },
+                  { "key": "nested.int", "value": { "intValue": "0" } },
+                  { "key": "nested.map", "value": { "kvlistValue": { "values": [
+                    { "key": "deep.mixed", "value": { "arrayValue": { "values": [{ "stringValue": "x" }, { "intValue": "1" }] } } }
+                  ] } } }
+                ] } } },
+                { "key": "qualification.empty", "value": {} }
+              ],
+              "droppedAttributesCount": 3,
+              "events": [
+                {
+                  "timeUnixNano": "1790856000223456789",
+                  "name": "cache.miss",
+                  "attributes": [
+                    { "key": "cache.key", "value": { "stringValue": "user:42" } },
+                    { "key": "cache.name", "value": { "stringValue": "profiles" } }
+                  ],
+                  "droppedAttributesCount": 1
+                }
+              ],
+              "droppedEventsCount": 2,
+              "links": [
+                {
+                  "traceId": "2904730afd20f69baabe13593b08a9a0",
+                  "spanId": "a4e46f4e67ea0510",
+                  "flags": 259,
+                  "attributes": [
+                    { "key": "qualification.link.reason", "value": { "stringValue": "fallback" } },
+                    { "key": "qualification.link.attempt", "value": { "intValue": "2" } }
+                  ],
+                  "droppedAttributesCount": 2
+                }
+              ],
+              "droppedLinksCount": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

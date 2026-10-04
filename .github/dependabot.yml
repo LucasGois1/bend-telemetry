@@ -11,3 +11,14 @@ updates:
       github-actions:
         patterns:
           - '*'
+  - package-ecosystem: docker-compose
+    directory: /qualification
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      docker-compose:
+        patterns:
+          - '*'

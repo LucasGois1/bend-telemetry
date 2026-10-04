@@ -14,8 +14,9 @@ is the glossary, and its terms are the ones to use.
   `shasum`); `unzip` and an xz-capable `tar` for the semantic conventions
   generator.
 - Clang 14 or later for native builds (`CC` names another C compiler).
-- Node 22 or later, for the local hub and for the programs that run under
-  Node.
+- Node 22 or later, for the local hub, for the programs that run under Node
+  and for the qualification harness's verifier.
+- Docker, or Podman with a compose plugin, for the qualification harness.
 
 ## Setup
 
@@ -50,7 +51,7 @@ uvx zizmor==1.30.1 --no-online-audits .github/workflows
 git ls-files -z -- '*.js' '*.mjs' | xargs -0 -n 1 node --check
 ./scripts/lint-lanes.sh
 ./scripts/test-lint-lanes.sh
-lychee --offline --include-fragments --no-progress '*.md' 'packages/**/*.md'
+lychee --offline --include-fragments --no-progress '*.md' 'packages/**/*.md' 'qualification/**/*.md'
 ```
 
 (`lychee` v0.24 checks the local links; without it, follow the links by
@@ -84,6 +85,25 @@ CI runs the same gates natively on Linux x86_64 and macOS ARM64 and, for the
 programs that run under Node, on Node 22 and 24 (the first and the current
 release of each line), plus the semantic conventions check on Linux and the
 quality checks above, the lane lint among them.
+
+The qualification harness is a gate too, not yet a required check: it sends
+the reference trace over OTLP to an OpenTelemetry Collector, which exports it
+to Grafana Tempo, and its verifier checks what the Collector wrote and what
+Tempo shows. Run it before pushing a change to the reference trace, to the
+harness or, later, to what a producer exports:
+
+```sh
+node --test qualification/*.test.mjs
+./scripts/qualify.sh up
+./scripts/qualify.sh run
+./scripts/qualify.sh down
+```
+
+The first command runs the verifier's unit tests. CI runs all four in the
+`qualification` job on Linux, with the Collector's output, the stack's logs
+and the verifier's evidence as its artifact; `qualification/README.md`
+describes the stack, its pins, the reference trace and what the verifier
+asserts.
 
 ## Packages and the local hub
 

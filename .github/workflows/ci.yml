@@ -55,7 +55,7 @@ jobs:
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           lycheeVersion: v0.24.2
-          args: --offline --include-fragments --no-progress '*.md' 'packages/**/*.md'
+          args: --offline --include-fragments --no-progress '*.md' 'packages/**/*.md' 'qualification/**/*.md'
           output: build/quality/local-links.md
           fail: true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -183,3 +183,36 @@ jobs:
           NATIVE_RESULT: ${{ needs.native.result }}
           NODE_RESULT: ${{ needs.node.result }}
           SEMCONV_RESULT: ${{ needs.semconv.result }}
+
+  # The qualification harness (qualification/README.md): the verifier's unit
+  # tests, then the Collector, Tempo and Grafana stack fed with the reference
+  # trace by curl. Not required yet: it joins required-baseline once it has
+  # proved stable (#56).
+  qualification:
+    name: qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Unit tests of the verifier
+        run: node --test qualification/*.test.mjs
+      - name: Start the stack
+        run: ./scripts/qualify.sh up
+      - name: Send the reference trace with curl and verify it
+        run: ./scripts/qualify.sh run --producer curl
+      - name: Stop the stack and keep its logs
+        if: ${{ !cancelled() }}
+        run: ./scripts/qualify.sh down
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: qualification-${{ github.run_id }}
+          path: build/qualification/
+          if-no-files-found: error
+          retention-days: 14
