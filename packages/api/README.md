@@ -665,6 +665,20 @@ their expected output natively and on Node.
   span)`. A template argument such as the `~f` of `Maybe.show` must be a
   plain function: a definition with a `+` parameter is passed as a closed
   lambda, `~(data => show_counts(data))`, as the consumer does.
+- On the native lane, Bend 2.0.34 keeps a value that a definition builds or
+  destructures unboxed, one register per scalar field, and inlines every
+  non-recursive definition into its caller. A span is about 150 registers,
+  most of them the digits of its span context and its parent's; a segment
+  may carry 247, and large segments can defeat clang. Today a pure
+  definition that applies three or more operations to one span, a function
+  that takes a span and two span contexts, or a loop that reads a reusable
+  span twice does not compile natively, while the JavaScript lane has no
+  such limit. The shapes that compile are those of the consumer: carry a
+  span between steps inside a one-element list, which Bend keeps boxed,
+  apply one operation per iteration of a recursive definition, read a span
+  once per helper, and match `SpanData` once rather than calling several
+  readers on a copy. The limit and its options are tracked in
+  [#60](https://github.com/LucasGois1/bend-telemetry/issues/60).
 - Numbers have no hexadecimal literals, and a `Nat` literal stops at
   `4294967295n`: build a larger `Nat` with `Nat.mul` and `Nat.add`, as the
   consumer builds a count of milliseconds.

@@ -33,22 +33,6 @@ tracestate and the wrapped context; `Context` is a closed record that carries
 an optional span context, with empty, set, read and clear. Absence stands for
 the invalid span context.
 
-`bend-telemetry-api` gains the span with its pure operations (#6): `Span<P>`,
-parameterized by the SDK's payload type, is a recording span holding the
-payload and its data or a non-recording span holding only an optional span
-context; its operations set attributes, add links, set the status with ok
-final, update the name, add events with an explicit timestamp or an offset
-from the start reading, add a list of events and record an exception, each
-pure, each enforcing the span limits with dropped counts, and each the
-identity on a non-recording span. With it come the span kinds, the status,
-the event and link types, the start options as a closed record, the
-instrumentation scope, the span data that the SDK's end slot will receive
-and `Attributes.within`, which re-enforces limits on an event's or a link's
-attributes. The rules are laws proved in the proof gate, the consumer
-exercises every operation on a recording and a non-recording span with
-tight limits, and the reference documents the span, its states and its
-operations.
-
 `bend-telemetry-semconv` (#33): the attribute names, enumeration values and
 deprecation notes of the OpenTelemetry semantic conventions v1.44.0 for the
 namespaces of HTTP spans (`http`, `url`, `server`, `client`, `network`,
@@ -115,3 +99,20 @@ reporter. The rules are laws proved in the package's proof gate, which
 `tests/consumer/sdk_config.bend` prints the configuration of an environment
 that the runner sets from the `.env` file beside it, natively and
 in-process; `packages/sdk/README.md` is the reference.
+
+`bend-telemetry-api` gains the span with its pure operations (#6): `Span<P>`,
+parameterized by the SDK's payload type, is a recording span holding the
+payload and its data or a non-recording span holding only an optional span
+context; its operations set attributes, add links, set the status with ok
+final, update the name, add events with an explicit timestamp or an offset
+from the start reading, add a list of events and record an exception, each
+pure, each enforcing the span limits with dropped counts, and each the
+identity on a non-recording span. With it come the span kinds, the status,
+the event and link types, the start options as a closed record, the
+instrumentation scope, the span data that the SDK's end slot will receive
+and `Attributes.within`, which re-enforces limits on an event's or a link's
+attributes. The rules are laws proved in the proof gate, the consumer
+exercises every operation on a recording and a non-recording span with
+tight limits, and the reference documents the span, its states and its
+operations, and the register limits of the native lane that a span meets
+(#60).
