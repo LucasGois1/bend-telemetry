@@ -55,7 +55,7 @@ jobs:
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           lycheeVersion: v0.24.2
-          args: --offline --include-fragments --no-progress '*.md' 'packages/**/*.md'
+          args: --offline --include-fragments --no-progress '*.md' 'packages/**/*.md' 'qualification/**/*.md'
           output: build/quality/local-links.md
           fail: true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

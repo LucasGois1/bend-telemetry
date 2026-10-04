@@ -51,7 +51,7 @@ uvx zizmor==1.30.1 --no-online-audits .github/workflows
 git ls-files -z -- '*.js' '*.mjs' | xargs -0 -n 1 node --check
 ./scripts/lint-lanes.sh
 ./scripts/test-lint-lanes.sh
-lychee --offline --include-fragments --no-progress '*.md' 'packages/**/*.md'
+lychee --offline --include-fragments --no-progress '*.md' 'packages/**/*.md' 'qualification/**/*.md'
 ```
 
 (`lychee` v0.24 checks the local links; without it, follow the links by
