@@ -175,7 +175,7 @@ def Laws.invalid_literal():
   ({==}, {==})
 
 def Laws.specific_limits_win():
-  ({==}, ({==}, ({==}, {==})))
+  ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, {==}))))))
 
 def Laws.otlp_kept():
   ({==}, {==})

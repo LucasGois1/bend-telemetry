@@ -61,19 +61,19 @@ law invalid_boolean_once:
   for invalid: {Sdk.Env.read_bool(text) == Fail{reason} : Result<&2, &2, String, Bool>}
   {Sdk.Config.from_variables([Sdk.Variable{"OTEL_SDK_DISABLED", text}]) ==
     Sdk.Configured{Sdk.Config.default(), [Sdk.Diagnostic{Sdk.Warn{}, "config",
-      String.concat(["OTEL_SDK_DISABLED=\"", text, "\" ", reason, "; the default is kept"])}]} : Sdk.Configured}
+      String.concat(["OTEL_SDK_DISABLED=\"", text, "\" ", reason, "; the value is ignored"])}]} : Sdk.Configured}
 
 def invalid_boolean_once(text, reason, present, invalid):
   match text:
     case SNil{}:
       BoolsProof.absurd({Sdk.Config.from_variables([Sdk.Variable{"OTEL_SDK_DISABLED", SNil{}}]) ==
         Sdk.Configured{Sdk.Config.default(), [Sdk.Diagnostic{Sdk.Warn{}, "config",
-          String.concat(["OTEL_SDK_DISABLED=\"", SNil{}, "\" ", reason, "; the default is kept"])}]} : Sdk.Configured},
+          String.concat(["OTEL_SDK_DISABLED=\"", SNil{}, "\" ", reason, "; the value is ignored"])}]} : Sdk.Configured},
         Equal.sym(Bool, True{}, False{}, present))
     case SCon{+head, +tail}:
       %Equal.sym(Result<&2, &2, String, Bool>, Sdk.Env.read_bool(SCon{head, tail}), Fail{reason}, invalid) :
         {Sdk.Env.step(Bool, "OTEL_SDK_DISABLED", Sdk.Configured{Sdk.Config.default(), Nil{}}, SCon{head, tail}, _,
           Sdk.Config.with_disabled) ==
           Sdk.Configured{Sdk.Config.default(), [Sdk.Diagnostic{Sdk.Warn{}, "config",
-            String.concat(["OTEL_SDK_DISABLED=\"", SCon{head, tail}, "\" ", reason, "; the default is kept"])}]} : Sdk.Configured}
+            String.concat(["OTEL_SDK_DISABLED=\"", SCon{head, tail}, "\" ", reason, "; the value is ignored"])}]} : Sdk.Configured}
       {==}

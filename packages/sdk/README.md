@@ -79,12 +79,14 @@ before: the defaults, the environment and the setters (spec #11, user story
 | The span limits the provider gives every span | `Config.span_limits -> Api.SpanLimits` | `Config.with_span_limits(config, limits)` | `Api.SpanLimits.default()` |
 | The exporter of the standard pipeline | `Config.exporter -> ExporterSelection` | `Config.with_exporter(config, selection)` | `ExternalExporter{"otlp"}` |
 | The `OTEL_EXPORTER_OTLP_*` values, as text under their variable names | `Config.otlp -> List<&2, Variable>`, `Config.otlp_value(config, name) -> Maybe<&2, String>` | `Config.with_otlp(config, values)`, `Config.with_otlp_value(config, name, value)` | `Nil{}` |
-| The milliseconds a shutdown waits for the pipeline, absent for no limit | `Config.shutdown_timeout -> Maybe<&2, Nat>` | `Config.with_shutdown_timeout(config, timeout)` | `Some{30000n}` |
+| The milliseconds a shutdown waits for the pipeline, absent for no limit | `Config.shutdown_timeout -> Maybe<&2, Nat>` | `Config.with_shutdown_timeout(config, timeout)` | `Some{10000n}` |
 | The hexadecimal digits of precision of the ratio sampler's threshold | `Config.threshold_precision -> Nat` | `Config.with_threshold_precision(config, digits)` | `4n` |
 
 The defaults are the specification's (law `config_default`). The shutdown
-timeout has no variable and no value in the specification; this package
-takes the export budget's default, since a shutdown runs one last export.
+timeout has no variable; it defaults to 10 s, one export budget, the OTLP
+exporter's timeout of [#19](https://github.com/LucasGois1/bend-telemetry/issues/19),
+as the graceful shutdown specification
+([#38](https://github.com/LucasGois1/bend-telemetry/issues/38)) says.
 
 The types the fields hold:
 
@@ -165,21 +167,24 @@ the default (the rules are under [Parsing rules](#parsing-rules)).
 | `OTEL_BSP_EXPORT_TIMEOUT` | `Config.batch`, `export_timeout` | `30000` | timeout: `0` is no limit |
 | `OTEL_BSP_MAX_QUEUE_SIZE` | `Config.batch`, `queue_size` | `2048` | size |
 | `OTEL_BSP_MAX_EXPORT_BATCH_SIZE` | `Config.batch`, `batch_size` | `512` | size |
-| `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` | `Config.span_limits`, `attribute_value_length` | no limit | count; `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` wins over it |
-| `OTEL_ATTRIBUTE_COUNT_LIMIT` | `Config.span_limits`, `attribute_count` | `128` | count; `OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT` wins over it |
-| `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` | `Config.span_limits`, `attribute_value_length` | no limit | count |
-| `OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT` | `Config.span_limits`, `attribute_count` | `128` | count |
+| `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` | `Config.span_limits`, `attribute_value_length` | no limit | count; `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT`, when set and valid, wins over it |
+| `OTEL_ATTRIBUTE_COUNT_LIMIT` | `Config.span_limits`: `attribute_count`, `attribute_per_event_count` and `attribute_per_link_count` | `128` | count, for every record; the specific variable of each field, when set and valid, wins over it for that field |
+| `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` | `Config.span_limits`, `attribute_value_length` | no limit | count; wins over the general value length |
+| `OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT` | `Config.span_limits`, `attribute_count` | `128` | count; wins over the general count for a span's attributes |
 | `OTEL_SPAN_EVENT_COUNT_LIMIT` | `Config.span_limits`, `event_count` | `128` | count |
 | `OTEL_SPAN_LINK_COUNT_LIMIT` | `Config.span_limits`, `link_count` | `128` | count |
-| `OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT` | `Config.span_limits`, `attribute_per_event_count` | `128` | count |
-| `OTEL_LINK_ATTRIBUTE_COUNT_LIMIT` | `Config.span_limits`, `attribute_per_link_count` | `128` | count |
+| `OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT` | `Config.span_limits`, `attribute_per_event_count` | `128` | count; wins over the general count for an event's attributes |
+| `OTEL_LINK_ATTRIBUTE_COUNT_LIMIT` | `Config.span_limits`, `attribute_per_link_count` | `128` | count; wins over the general count for a link's attributes |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_INSECURE`, `OTEL_EXPORTER_OTLP_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY`, `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_COMPRESSION`, `OTEL_EXPORTER_OTLP_TIMEOUT`, `OTEL_EXPORTER_OTLP_PROTOCOL`, and each with `_TRACES_` in place of the second underscore after `OTLP` (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and so on) | `Config.otlp`, under the variable's name | unset | text, kept raw: the OTLP exporter package gives each its meaning and reads the traces-specific variable before the general one |
 
-The general attribute limits apply to a span's own attributes, as the Java
-SDK applies them; the attributes of events and links have their own
-variables. The span-specific limits win over the general ones whatever the
-order of the variables (law `specific_limits_win`). A limit from the
-environment is always a bound: no variable sets a limit to "no limit".
+The general attribute limits apply per record, as the specification defines
+them and the Java SDK documents them: `OTEL_ATTRIBUTE_COUNT_LIMIT` bounds
+the attributes of spans, events and links alike, and
+`OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` their values. A specific variable that is
+set and valid wins over the general one for its own field, whatever the
+order of the variables; one that is invalid is reported and leaves the
+general value (law `specific_limits_win`). A limit from the environment is
+always a bound: no variable sets a limit to "no limit".
 
 `OTEL_PROPAGATORS` belongs to the propagation specification
 ([#26](https://github.com/LucasGois1/bend-telemetry/issues/26)); the OTLP
@@ -209,8 +214,9 @@ Then:
   diagnostic (law `empty_is_unset`).
 - An invalid value leaves the default and produces exactly one diagnostic,
   a warning of the `config` component:
-  `OTEL_SDK_DISABLED="yes" is not a Boolean (true or false); the default is
-  kept` (laws `invalid_boolean_once` and `invalid_literal`).
+  `OTEL_SDK_DISABLED="yes" is not a Boolean (true or false); the value is
+  ignored` (laws `invalid_boolean_once` and `invalid_literal`). The field
+  keeps what it held: the default, or the value of a general limit.
 - A size of zero is invalid: a queue or a batch holds at least one span.
   Provider construction checks the relation between programmatic sizes
   (spec #11, "Provider construction"); the environment never fails it.

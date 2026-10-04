@@ -11,11 +11,12 @@ import bend-telemetry-sdk@0.1.0.0/host.bend as Host
 # clean clone served by the local hub, with the variables of sdk_config.env
 # beside this file set, and compares its output with sdk_config.expected.txt.
 #
-# The environment has a sampler and its argument, a level, limits (the
-# span-specific count over the general one, and the largest accepted
-# integer), an invalid Boolean and an invalid integer, a timeout of zero, an
-# empty variable, the console exporter, a service name, raw resource
-# attributes and two OTLP values. Then the program shows the reporter's
+# The environment has a sampler and its argument, a level, limits (a general
+# attribute count, which fills the count per link, with the span and the
+# event counts winning over it, and the largest accepted integer), an
+# invalid Boolean and an invalid integer, a timeout of zero, an empty
+# variable, the console exporter, a service name, raw resource attributes
+# and two OTLP values. Then the program shows the reporter's
 # decision, that a setter wins over the environment, the defaults, the pure
 # core on literal variables and the percent decoder. It runs natively and
 # in-process on the JavaScript lane, never under node: reading a variable

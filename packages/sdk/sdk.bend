@@ -363,6 +363,13 @@ def SpanLimits.with_attribute_per_link_count(limits: Api.SpanLimits, count: Mayb
     case Api.SpanLimits{attribute_count, attribute_value_length, event_count, link_count, attribute_per_event_count, previous}:
       Api.SpanLimits{attribute_count, attribute_value_length, event_count, link_count, attribute_per_event_count, count}
 
+# The limits with one attribute count for spans, events and links alike: the
+# general attribute count limit, which bounds every record.
+def SpanLimits.with_attribute_counts(limits: Api.SpanLimits, +count: Maybe<&2, Nat>) -> Api.SpanLimits:
+  match limits:
+    case Api.SpanLimits{previous_span, attribute_value_length, event_count, link_count, previous_event, previous_link}:
+      Api.SpanLimits{count, attribute_value_length, event_count, link_count, count, count}
+
 # Configuration
 # =============
 #
@@ -375,11 +382,12 @@ def SpanLimits.with_attribute_per_link_count(limits: Api.SpanLimits, count: Mayb
 # level, an empty user resource, no service name and no resource attributes
 # from the environment, the parent-based always-on sampler with no argument,
 # no processors in code, the batch options' defaults, the API's span limits,
-# the `otlp` exporter selection, no OTLP values, a shutdown timeout of 30000
-# milliseconds and a sampling threshold of four hexadecimal digits.
+# the `otlp` exporter selection, no OTLP values, a shutdown timeout of 10000
+# milliseconds, one export budget (spec #38), and a sampling threshold of
+# four hexadecimal digits.
 def Config.default() -> Config:
   Config{False{}, Info{}, Resource.empty(), None{}, None{}, ParentBasedAlwaysOn{}, None{}, Nil{}, BatchOptions.default(),
-    Api.SpanLimits.default(), ExternalExporter{"otlp"}, Nil{}, Some{30000n}, 4n}
+    Api.SpanLimits.default(), ExternalExporter{"otlp"}, Nil{}, Some{10000n}, 4n}
 
 # Whether the SDK is disabled: a disabled provider records nothing and
 # starts no computation.
@@ -882,8 +890,9 @@ def Env.read_text(text: String) -> Result<&2, &2, String, String>:
 # host.bend's Config.from_env reads the variables and calls it.
 
 # The variables read into the configuration's own fields, in the order they
-# are applied: the span-specific limits come after the general attribute
-# limits, so that they win.
+# are applied: the general attribute limits fill the value length and every
+# attribute count first, and the specific limits come after them, so that a
+# specific one that is set and valid wins over the general one for its field.
 def Env.general_names() -> List<&2, String>:
   ["OTEL_SDK_DISABLED", "OTEL_LOG_LEVEL", "OTEL_SERVICE_NAME", "OTEL_RESOURCE_ATTRIBUTES", "OTEL_TRACES_SAMPLER",
    "OTEL_TRACES_SAMPLER_ARG", "OTEL_TRACES_EXPORTER", "OTEL_BSP_SCHEDULE_DELAY", "OTEL_BSP_EXPORT_TIMEOUT",
@@ -929,9 +938,10 @@ def Env.lookup(variables: List<&2, Variable>, +name: String) -> Maybe<&2, String
       Env.lookup.step(value, Env.lookup(rest, name), String.eq(found, name))
 
 # The message of an invalid value: the variable, its text, the parser's
-# reason and what follows.
+# reason and what follows: the value is ignored, so the field keeps what it
+# held, the default or a general limit's value.
 def Env.message(name: String, text: String, reason: String) -> String:
-  String.concat([name, "=\"", text, "\" ", reason, "; the default is kept"])
+  String.concat([name, "=\"", text, "\" ", reason, "; the value is ignored"])
 
 # A parsed value is set with the setter; a refusal keeps the configuration
 # and adds one warning of the config component.
@@ -992,6 +1002,10 @@ def Env.set_attribute_value_length(config: Config, length: Nat) -> Config:
 def Env.set_attribute_count(config: Config, count: Nat) -> Config:
   Env.update_limits(config, limits => SpanLimits.with_attribute_count(limits, Some{count}))
 
+# The general attribute count limit: every record's attribute count.
+def Env.set_attribute_counts(config: Config, count: Nat) -> Config:
+  Env.update_limits(config, limits => SpanLimits.with_attribute_counts(limits, Some{count}))
+
 def Env.set_event_count(config: Config, count: Nat) -> Config:
   Env.update_limits(config, limits => SpanLimits.with_event_count(limits, Some{count}))
 
@@ -1035,7 +1049,7 @@ def Config.from_variables(+variables: List<&2, Variable>) -> Configured:
   s10 = Env.apply(Nat, s9, variables, "OTEL_BSP_MAX_QUEUE_SIZE", Env.read_size, Env.set_queue_size)
   s11 = Env.apply(Nat, s10, variables, "OTEL_BSP_MAX_EXPORT_BATCH_SIZE", Env.read_size, Env.set_batch_size)
   s12 = Env.apply(Nat, s11, variables, "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT", Env.read_count, Env.set_attribute_value_length)
-  s13 = Env.apply(Nat, s12, variables, "OTEL_ATTRIBUTE_COUNT_LIMIT", Env.read_count, Env.set_attribute_count)
+  s13 = Env.apply(Nat, s12, variables, "OTEL_ATTRIBUTE_COUNT_LIMIT", Env.read_count, Env.set_attribute_counts)
   s14 = Env.apply(Nat, s13, variables, "OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", Env.read_count, Env.set_attribute_value_length)
   s15 = Env.apply(Nat, s14, variables, "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", Env.read_count, Env.set_attribute_count)
   s16 = Env.apply(Nat, s15, variables, "OTEL_SPAN_EVENT_COUNT_LIMIT", Env.read_count, Env.set_event_count)

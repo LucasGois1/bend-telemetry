@@ -108,15 +108,15 @@ law name:
 #     attributes, the parent-based always-on sampler with no argument, no
 #     programmatic processors, the batch options' defaults, the API's default
 #     span limits, the `otlp` exporter selection, no OTLP values, a shutdown
-#     timeout of 30000 milliseconds and a threshold precision of four digits.
+#     timeout of 10000 milliseconds and a threshold precision of four digits.
 #   Requirement: OTel, Environment Variables, General SDK Configuration
 #     (OTEL_SDK_DISABLED false, OTEL_LOG_LEVEL info,
 #     OTEL_TRACES_SAMPLER parentbased_always_on, OTEL_TRACES_EXPORTER otlp);
 #     spec #11, "Configuration" ("Config.default has the specification's
 #     defaults and no exporter") and "Samplers" ("rounded to four hex digits
-#     of precision by default"); the shutdown timeout is this package's
-#     choice, the export timeout's default, since a shutdown runs one last
-#     export.
+#     of precision by default"); spec #38: "the SDK's shutdown timeout, which
+#     defaults to 10 s, one export budget" (the OTLP exporter's timeout of
+#     spec #19).
 #   Why: an application that configures nothing must behave as any
 #     OpenTelemetry SDK does.
 #   Proof: Laws.config_default, by computation.
@@ -133,7 +133,7 @@ law config_default:
   {Sdk.Config.span_limits(Sdk.Config.default()) == Api.SpanLimits.default() : Api.SpanLimits} &
   {Sdk.Config.exporter(Sdk.Config.default()) == Sdk.ExternalExporter{"otlp"} : Sdk.ExporterSelection} &
   {Sdk.Config.otlp(Sdk.Config.default()) == Nil{} : List<&2, Sdk.Variable>} &
-  {Sdk.Config.shutdown_timeout(Sdk.Config.default()) == Some{30000n} : Maybe<&2, Nat>} &
+  {Sdk.Config.shutdown_timeout(Sdk.Config.default()) == Some{10000n} : Maybe<&2, Nat>} &
   {Sdk.Config.threshold_precision(Sdk.Config.default()) == 4n : Nat}
 
 # LAW batch_default
@@ -640,7 +640,9 @@ law environment_literal:
 #     else.
 #   Reading: `present` says the text is not empty (an empty text is unset)
 #     and `invalid` that the parser refused it with `reason`; the diagnostic
-#     is the one Env.message builds from the three.
+#     is the one Env.message builds from the three. The message says the
+#     value is ignored, which holds whether the field then keeps the default
+#     or a general limit's value.
 #   Proof: Laws.invalid_boolean_once, via proofs/config.bend: the parser's
 #     refusal is rewritten into the step that applies the variable.
 law invalid_boolean_once:
@@ -650,7 +652,7 @@ law invalid_boolean_once:
   for invalid: {Sdk.Env.read_bool(text) == Fail{reason} : Result<&2, &2, String, Bool>}
   {Sdk.Config.from_variables([Sdk.Variable{"OTEL_SDK_DISABLED", text}]) ==
     Sdk.Configured{Sdk.Config.default(), [Sdk.Diagnostic{Sdk.Warn{}, "config",
-      String.concat(["OTEL_SDK_DISABLED=\"", text, "\" ", reason, "; the default is kept"])}]} : Sdk.Configured}
+      String.concat(["OTEL_SDK_DISABLED=\"", text, "\" ", reason, "; the value is ignored"])}]} : Sdk.Configured}
 
 # LAW invalid_literal
 #   Claim: an invalid integer, an unknown enumeration value and an invalid
@@ -662,26 +664,35 @@ law invalid_boolean_once:
 law invalid_literal:
   {Sdk.Config.from_variables([Sdk.Variable{"OTEL_BSP_MAX_QUEUE_SIZE", "12x"}, Sdk.Variable{"OTEL_LOG_LEVEL", "debug"}]) ==
     Sdk.Configured{Sdk.Config.with_level(Sdk.Config.default(), Sdk.Debug{}),
-      [Sdk.Diagnostic{Sdk.Warn{}, "config", "OTEL_BSP_MAX_QUEUE_SIZE=\"12x\" is not an integer from 1 to 2147483647; the default is kept"}]} :
+      [Sdk.Diagnostic{Sdk.Warn{}, "config", "OTEL_BSP_MAX_QUEUE_SIZE=\"12x\" is not an integer from 1 to 2147483647; the value is ignored"}]} :
     Sdk.Configured} &
   {Sdk.Config.from_variables([Sdk.Variable{"OTEL_TRACES_SAMPLER", "xray"}, Sdk.Variable{"OTEL_SDK_DISABLED", "yes"}]) ==
     Sdk.Configured{Sdk.Config.default(),
-      [Sdk.Diagnostic{Sdk.Warn{}, "config", "OTEL_SDK_DISABLED=\"yes\" is not a Boolean (true or false); the default is kept"},
-       Sdk.Diagnostic{Sdk.Warn{}, "config", "OTEL_TRACES_SAMPLER=\"xray\" names a sampler this SDK does not provide; the default is kept"}]} :
+      [Sdk.Diagnostic{Sdk.Warn{}, "config", "OTEL_SDK_DISABLED=\"yes\" is not a Boolean (true or false); the value is ignored"},
+       Sdk.Diagnostic{Sdk.Warn{}, "config", "OTEL_TRACES_SAMPLER=\"xray\" names a sampler this SDK does not provide; the value is ignored"}]} :
     Sdk.Configured}
 
 # LAW specific_limits_win
-#   Claim: a span-specific limit wins over the general attribute limit it
-#     overlaps, whichever is listed first; the general limit applies when the
-#     specific one is unset, and the per-event and per-link counts are not
-#     touched by the general count.
-#   Requirement: OTel, Environment Variables, Span Limits and Attribute
-#     Limits: the span-specific limits take precedence over the general
-#     attribute limits; spec #11, "Span limits from the environment fill the
-#     API's span limits record, with the span-specific variables winning over
-#     the general attribute limits".
+#   Claim: the general attribute count bounds the attributes of spans,
+#     events and links alike, and the general value length every value; a
+#     specific limit that is set and valid wins over the general one for its
+#     own field, whichever is listed first; a specific limit that is invalid
+#     is reported and leaves the general value. Literal cases: the span
+#     count over the general count in both orders, the span value length
+#     over the general one, the general count and length alone filling every
+#     field, the event count over the general count with the link count
+#     taken from it, the link count listed first, and an invalid span count
+#     beside a general one.
+#   Requirement: OTel, Environment Variables, Attribute Limits:
+#     OTEL_ATTRIBUTE_COUNT_LIMIT and OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT apply
+#     to every record; Span Limits: OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT,
+#     OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT
+#     and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT take precedence over them; spec #11,
+#     "Span limits from the environment fill the API's span limits record,
+#     with the span-specific variables winning over the general attribute
+#     limits".
 #   Why: an operator who bounds every attribute at 10 and spans at 20 gets
-#     20 attributes on a span.
+#     20 attributes on a span and 10 on each event and link.
 #   Proof: Laws.specific_limits_win, by computation.
 law specific_limits_win:
   {Api.SpanLimits.attribute_count(Sdk.Config.span_limits(Sdk.Configured.config(Sdk.Config.from_variables(
@@ -695,7 +706,18 @@ law specific_limits_win:
     Some{20n} : Maybe<&2, Nat>} &
   {Sdk.Config.span_limits(Sdk.Configured.config(Sdk.Config.from_variables(
     [Sdk.Variable{"OTEL_ATTRIBUTE_COUNT_LIMIT", "10"}, Sdk.Variable{"OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT", "12"}]))) ==
-    Api.SpanLimits{Some{10n}, Some{12n}, Some{128n}, Some{128n}, Some{128n}, Some{128n}} : Api.SpanLimits}
+    Api.SpanLimits{Some{10n}, Some{12n}, Some{128n}, Some{128n}, Some{10n}, Some{10n}} : Api.SpanLimits} &
+  {Sdk.Config.span_limits(Sdk.Configured.config(Sdk.Config.from_variables(
+    [Sdk.Variable{"OTEL_ATTRIBUTE_COUNT_LIMIT", "10"}, Sdk.Variable{"OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT", "5"}]))) ==
+    Api.SpanLimits{Some{10n}, None{}, Some{128n}, Some{128n}, Some{5n}, Some{10n}} : Api.SpanLimits} &
+  {Api.SpanLimits.attribute_per_link_count(Sdk.Config.span_limits(Sdk.Configured.config(Sdk.Config.from_variables(
+    [Sdk.Variable{"OTEL_LINK_ATTRIBUTE_COUNT_LIMIT", "6"}, Sdk.Variable{"OTEL_ATTRIBUTE_COUNT_LIMIT", "10"}])))) ==
+    Some{6n} : Maybe<&2, Nat>} &
+  {Sdk.Config.from_variables([Sdk.Variable{"OTEL_ATTRIBUTE_COUNT_LIMIT", "10"}, Sdk.Variable{"OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "x"}]) ==
+    Sdk.Configured{Sdk.Config.with_span_limits(Sdk.Config.default(),
+      Api.SpanLimits{Some{10n}, None{}, Some{128n}, Some{128n}, Some{10n}, Some{10n}}),
+      [Sdk.Diagnostic{Sdk.Warn{}, "config", "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT=\"x\" is not an integer from 0 to 2147483647; the value is ignored"}]} :
+    Sdk.Configured}
 
 # LAW otlp_kept
 #   Claim: the OTLP variables are kept as text under their own names, the

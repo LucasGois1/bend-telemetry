@@ -77,7 +77,7 @@ diagnostics. The pure core `sdk.bend`, which the proof gate imports alone,
 holds `Config`, a closed record with the specification's defaults (the
 parent-based always-on sampler, the `otlp` exporter selection, a batch
 processor of 2048 spans, 5000 ms, 30000 ms and 512 spans, the API's span
-limits, a shutdown timeout of 30000 ms and a threshold precision of four
+limits, a shutdown timeout of 10000 ms and a threshold precision of four
 digits), a reader and a pure setter per field, so that code wins over the
 environment; the parsers of the 37 supported `OTEL_*` variables and
 `Config.from_variables`, which applies an environment to the defaults and
@@ -87,8 +87,9 @@ UTF-8 and refuses bad escapes. The parsing rules: an empty value is unset, a
 Boolean is true only for a case-insensitive `true`, integers are non-negative
 up to 2^31 - 1 and sizes positive, durations are milliseconds and a timeout of
 zero is no limit, enumerations are case-insensitive, an invalid value yields
-one warning and keeps the default, the span-specific limits win over the
-general attribute limits, and `OTEL_RESOURCE_ATTRIBUTES`,
+one warning and is ignored, the general attribute limits bound spans, events
+and links alike and the specific limits win over them, and
+`OTEL_RESOURCE_ATTRIBUTES`,
 `OTEL_TRACES_SAMPLER_ARG` and the `OTEL_EXPORTER_OTLP_*` family are kept as
 text. `host.bend`, the package's entry on the hub, adds the effects:
 `Config.from_env`, which never fails, the stderr reporter with its fixed
