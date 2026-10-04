@@ -27,7 +27,7 @@ All packages share one version and are released together; see
 | `bend-telemetry-api` | The tracing API that instrumented code depends on; it works alone through its no-op implementation |
 | `bend-telemetry-sdk` | The tracing SDK: sampling, span processing, resources, and the standard-output and in-memory exporters; in development, today its configuration from code and from the `OTEL_*` variables, and its diagnostics ([README](packages/sdk/README.md)) |
 | `bend-telemetry-exporter-otlp` | Export to an OTLP endpoint |
-| `bend-telemetry-instrumentation-http` | Spans and context propagation for HTTP on bend-kit |
+| `bend-telemetry-instrumentation-http` | Spans and context propagation for HTTP on bend-kit; in development, today its pure core: the span names, attributes and status of the HTTP semantic conventions, with credentials and sensitive query values redacted, and its configuration ([README](packages/instrumentation-http/README.md)) |
 | `bend-telemetry-semconv` | Semantic conventions v1.44.0: attribute names, enumeration values and the schema URL, generated with weaver ([README](packages/semconv/README.md)) |
 
 The decisions behind this layout are in
@@ -49,7 +49,7 @@ which Node does not have, so a Node program that sleeps fails with
 | --- | --- | --- |
 | Native | The C build: `bend file.bend -o file` | Every package |
 | JavaScript lane | The Bun embedded in the pinned `bend`, 1.3.14 for Bend 2.0.34 (the version is named for each release). `bend file.bend` runs a program in-process, and a `-o x.js` build runs under a `bun` executable | Every package |
-| Node | `-o x.js` programs with no effect that waits (printing, channels, spawn, the clock, an environment variable that is set) and the pure `-o x.mjs` module | The API and the semantic conventions, and the OTLP encoding core, the propagators and the pure HTTP core as they land; not the SDK's span pipeline, its configuration reader (an unset variable needs `bun:ffi`) or the exporter's transport |
+| Node | `-o x.js` programs with no effect that waits (printing, channels, spawn, the clock, an environment variable that is set) and the pure `-o x.mjs` module | The API, the semantic conventions and the pure HTTP core, and the OTLP encoding core and the propagators as they land; not the SDK's span pipeline, its configuration reader (an unset variable needs `bun:ffi`) or the exporter's transport |
 | Browsers | Pure definitions only, with no Bend IO | Out of scope until [bendlang/bend#1148](https://github.com/bendlang/bend/issues/1148) is resolved |
 
 The matrix is that of the specification

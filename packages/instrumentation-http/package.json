@@ -1,0 +1,14 @@
+{
+  "name": "bend-telemetry-instrumentation-http",
+  "version": "0.1.0-dev",
+  "description": "OpenTelemetry HTTP instrumentation for Bend: spans and context propagation for HTTP on bend-kit",
+  "license": "Apache-2.0",
+  "private": true,
+  "bend": {
+    "entry": "host.bend",
+    "dependencies": {
+      "bend-telemetry-api": "0.1.0.0",
+      "bend-telemetry-semconv": "0.1.0.0"
+    }
+  }
+}

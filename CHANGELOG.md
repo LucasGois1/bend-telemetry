@@ -133,3 +133,32 @@ what forwarding answers for it. The consumer builds one from the W3C example
 identifiers, prints the flags of every span context it holds, links a span to
 it and prints what forwarding answers, holding it in a one-element list for
 the native lane (#60); the reference documents both.
+
+`bend-telemetry-instrumentation-http` (#34): the package skeleton and the
+pure HTTP core. `core.bend`, which the proof gate imports alone, derives from
+a method, a raw request target or a full URL, a header list and a status code
+or a transport failure what the HTTP semantic conventions v1.44.0 require,
+every attribute name and value taken from the semconv package and the status
+as the API's `Status`: the known methods (those of RFC 9110, PATCH and QUERY,
+matched exactly, `_OTHER` with `http.request.method_original` otherwise, the
+set a full override), span names (`{method} {route}`, `{method}`, `HTTP` for
+`_OTHER`), the status tables of server and client spans with `error.type`
+(the status code as text on an error, a transport failure's identifier,
+never on success), `url.full` with the userinfo replaced by
+`REDACTED:REDACTED` before any parsing and the values of the sensitive query
+keys replaced by `REDACTED` with the keys kept, the server's `url.path` and
+redacted `url.query`, `url.scheme`, `server.address`, `server.port` and
+`client.address` from `Forwarded`, the `X-Forwarded-*` headers and `Host`,
+and `user_agent.original`, the client's `server.address` and `server.port`
+from the URL with the scheme's default port, header capture as
+lowercase-named string arrays and body sizes from `Content-Length` or the
+body's length, and the `Config` record with its defaults, readers, setters
+and `Config.from_variables`. `host.bend`, the package's entry on the hub,
+adds `Config.from_env`, which reads `OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS`
+with the SDK's parsing rules. The rules are laws proved in the package's
+proof gate; two consumers print the core's results on literal inputs,
+`tests/consumer/http_core.bend` on every lane, node included, and
+`tests/consumer/http_config.bend` reading the variable natively and
+in-process; `packages/instrumentation-http/README.md` is the reference. The
+local hub publishes the working tree's packages in dependency order, so that
+a package may import one whose name sorts after its own.
