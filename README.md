@@ -17,6 +17,10 @@ project.
 - W3C Trace Context propagation and identifier generation come from
   [bend-trace-context](https://github.com/LucasGois1/bend-trace-context).
 
+[COMPLIANCE.md](COMPLIANCE.md) says, row by row of the specification's
+compliance matrix, what this project implements, wholly or in part, what is
+pending with the ticket that implements it, and what does not apply and why.
+
 ## Packages
 
 All packages share one version and are released together; see
