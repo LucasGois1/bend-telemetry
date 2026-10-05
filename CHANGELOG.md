@@ -162,3 +162,19 @@ proof gate; two consumers print the core's results on literal inputs,
 in-process; `packages/instrumentation-http/README.md` is the reference. The
 local hub publishes the working tree's packages in dependency order, so that
 a package may import one whose name sorts after its own.
+
+The compliance status (#51): `qualification/compliance/bend.yaml` classifies
+each of the 326 rows of the compliance matrix of the OpenTelemetry
+specification v1.61.0, in the schema of the specification's own matrix
+files, as implemented, partial, pending with the ticket that implements it,
+or not applicable with the reason, and `COMPLIANCE.md` is generated from it.
+`scripts/compliance.sh` regenerates the document; with `--check` it fails
+when the vendored `template.yaml` is not the one pinned by SHA-256, when the
+status file leaves a row of the template unclassified or classifies one the
+template lacks, when a status is outside the specification's legend, when a
+row that is not implemented names neither its ticket nor its reason, or when
+the committed `COMPLIANCE.md` differs from the regeneration; with `--fetch`
+it downloads the pinned template again. `scripts/test-compliance.sh` shows
+each failure on a scratch copy of the files, and the `quality` job runs both.
+The README links `COMPLIANCE.md`, and CONTRIBUTING says that a pull request
+that implements a row updates its status in the same pull request.

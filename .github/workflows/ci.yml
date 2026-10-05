@@ -1,10 +1,10 @@
 # The required checks of every pull request and of main: quality (shell,
-# workflow, link and lane checks), the gates on the pinned Bend release
-# natively on Linux x86_64 and macOS ARM64, the programs that run under Node
-# 22 and 24, and the semantic conventions package regenerated from the pinned
-# registry. The native and node jobs also run their programs in-process, on
-# the JavaScript lane. required-baseline is the one check branch protection
-# needs.
+# workflow, link, lane and compliance checks), the gates on the pinned Bend
+# release natively on Linux x86_64 and macOS ARM64, the programs that run
+# under Node 22 and 24, and the semantic conventions package regenerated from
+# the pinned registry. The native and node jobs also run their programs
+# in-process, on the JavaScript lane. required-baseline is the one check
+# branch protection needs.
 name: Checks
 
 on:
@@ -45,6 +45,10 @@ jobs:
         run: |
           ./scripts/lint-lanes.sh
           ./scripts/test-lint-lanes.sh
+      - name: Compliance status
+        run: |
+          ./scripts/compliance.sh --check
+          ./scripts/test-compliance.sh
       - name: zizmor
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
         with:

@@ -1,0 +1,1166 @@
+# Implementation status for Bend: bend-telemetry, against the compliance
+# matrix of the OpenTelemetry specification at the release that
+# `specification` names. ./scripts/compliance.sh checks this file against
+# that release's template.yaml, kept beside it, and generates COMPLIANCE.md
+# from it; a pull request that implements a row updates the row here
+# (CONTRIBUTING.md, "Compliance").
+#
+# Legend of `status`, the specification's:
+#   '+'     Implemented
+#   '-'     Not implemented
+#   'N/A'   Not applicable to this language
+#
+# The keys of this project, which the specification's generator ignores,
+# say what COMPLIANCE.md shows:
+#   note     with '+', what to know about the row
+#   partial  with '-' and a ticket, what exists of the row
+#   ticket   with '-', the issue that implements the row, or its rest
+#   reason   why the row does not apply to this project, with 'N/A' when its
+#            subject does not exist in this design, as Go records the
+#            implicit context, or with '-' when a specification of this
+#            project decided against it
+specification: v1.61.0
+sections:
+  - name: Traces
+    features:
+      - heading: '[TracerProvider](specification/trace/api.md#tracerprovider-operations)'
+        features:
+          - name: Create TracerProvider
+            status: '-'
+            ticket: 7
+          - name: Get a Tracer
+            status: '-'
+            ticket: 7
+          - name: Get a Tracer with schema_url
+            status: '-'
+            ticket: 7
+          - name: Get a Tracer with scope attributes
+            status: '-'
+            ticket: 7
+          - name: Associate Tracer with InstrumentationScope
+            status: '-'
+            ticket: 7
+          - name: Safe for concurrent calls
+            status: '-'
+            ticket: 7
+          - name: Shutdown (SDK only required)
+            status: '-'
+            ticket: 15
+          - name: ForceFlush (SDK only required)
+            status: '-'
+            ticket: 15
+      - heading: '[Trace / Context interaction](specification/trace/api.md#context-interaction)'
+        features:
+          - name: Get active Span
+            status: 'N/A'
+            reason: There is no implicit context; every operation that needs a parent takes a context
+              passed explicitly (#2), as Go records it.
+          - name: Set active Span
+            status: 'N/A'
+            reason: There is no implicit context; every operation that needs a parent takes a context
+              passed explicitly (#2), as Go records it.
+      - heading: '[Tracer](specification/trace/api.md#tracer-operations)'
+        features:
+          - name: Create a new Span
+            status: '-'
+            ticket: 7
+          - name: Documentation defines adding attributes at span creation as preferred
+            status: '-'
+            ticket: 8
+          - name: Get active Span
+            status: 'N/A'
+            reason: There is no implicit context; every operation that needs a parent takes a context
+              passed explicitly (#2), as Go records it.
+          - name: Mark Span active
+            status: 'N/A'
+            reason: There is no implicit context; every operation that needs a parent takes a context
+              passed explicitly (#2), as Go records it.
+          - name: Safe for concurrent calls
+            status: '-'
+            ticket: 7
+      - heading: '[SpanContext](specification/trace/api.md#spancontext)'
+        features:
+          - name: IsValid
+            status: 'N/A'
+            reason: There is no invalid span context (#2); absence stands for it, and the identifiers of
+              a span context are always valid (#5).
+          - name: IsRemote
+            status: '+'
+            note: Whether a span context is remote is its variant, which `Api.SpanContext.is_remote`
+              answers (#5).
+          - name: Conforms to the W3C TraceContext spec
+            status: '+'
+            note: A span context wraps the W3C Trace Context values of bend-trace-context, an incoming
+              context when remote and an outgoing one when local (#5), and reads their trace flags
+              (#10).
+          - name: '[Support W3C Trace Context Level 2 randomness](specification/trace/sdk.md#traceid-randomness)'
+            status: '-'
+            partial: A span context reads the random-trace-id flag of its trace ID through
+              `Api.SpanContext.trace_flags` (#10).
+            ticket: 15
+      - heading: '[Span](specification/trace/api.md#span)'
+        features:
+          - name: Create root span
+            status: '-'
+            ticket: 7
+          - name: Create with default parent (active span)
+            status: 'N/A'
+            reason: There is no implicit context; every operation that needs a parent takes a context
+              passed explicitly (#2), as Go records it.
+          - name: Create with parent from Context
+            status: '-'
+            ticket: 7
+          - name: No explicit parent Span/SpanContext allowed
+            status: '-'
+            ticket: 7
+          - name: SpanProcessor.OnStart receives parent Context
+            status: '-'
+            ticket: 16
+          - name: UpdateName
+            status: '+'
+            note: Through the pure operation `Api.Span.update_name` (#6).
+          - name: User-defined start timestamp
+            status: '-'
+            ticket: 7
+          - name: End
+            status: '-'
+            ticket: 7
+          - name: End with timestamp
+            status: '-'
+            ticket: 7
+          - name: IsRecording
+            status: '+'
+            note: Through `Api.Span.is_recording`, on a copy of the span (#6).
+          - name: IsRecording becomes false after End
+            status: 'N/A'
+            reason: Ending consumes the span (#2), and spans are values (#6), so a copy taken before the
+              end keeps answering as the span did then.
+          - name: Set status with StatusCode (Unset, Ok, Error)
+            status: '+'
+            note: Through `Api.Span.set_status`; ok is final, and a description exists only with an
+              error (#6).
+          - name: Safe for concurrent calls
+            status: 'N/A'
+            reason: A span has one owner (#2); only the computation that holds it records into it, and a
+              forked computation starts spans of its own and hands events back as data.
+          - name: events collection size limit
+            status: '+'
+            note: An event past the event count of the span limits is dropped and counted (#6).
+          - name: attribute collection size limit
+            status: '+'
+            note: An attribute past the attribute count of the span limits is dropped and counted (#6).
+          - name: links collection size limit
+            status: '+'
+            note: A link past the link count of the span limits is dropped and counted (#6).
+          - name: '[SpanProcessor.OnEnding](specification/trace/sdk.md#onending)'
+            status: '-'
+            reason: Out of scope of the API (#2) and the SDK (#11); the specification marks it
+              Development.
+      - heading: '[Span attributes](specification/trace/api.md#set-attributes)'
+        features:
+          - name: SetAttribute
+            status: '+'
+            note: Through `Api.Span.set_attribute` and `Api.Span.set_attributes`, under the span
+              limits (#6).
+          - name: String type
+            status: '+'
+            note: The attribute value `Api.StringValue` (#4).
+          - name: Boolean type
+            status: '+'
+            note: The attribute value `Api.BoolValue` (#4).
+          - name: Double floating-point type
+            status: '-'
+            partial: Span attributes take doubles (#6), held as an F32 until Base ships F64, so a value
+              that an F32 cannot hold exactly loses precision (#4).
+            ticket: 2
+          - name: Signed int64 type
+            status: '+'
+            note: The attribute value `Api.IntValue`, a 64-bit integer over two U32 limbs, exact over
+              the whole range (#4).
+          - name: Array of primitives (homogeneous)
+            status: '+'
+            note: The standard values of the specification, built by `Api.AttributeValue.strings`,
+              `bools`, `ints` and `doubles` (#4).
+          - name: '`null` values documented as invalid/undefined'
+            status: 'N/A'
+            reason: Bend has no null; an attribute value is one of the eight variants of its type, the
+              empty value among them (#4).
+          - name: Unicode support for keys and string values
+            status: '+'
+            note: Keys and string values are strings of Unicode characters, and the length limit counts
+              characters (#4).
+      - heading: '[Span linking](specification/trace/api.md#specifying-links)'
+        features:
+          - name: Links can be recorded on span creation
+            status: '-'
+            ticket: 7
+          - name: Links can be recorded after span creation
+            status: '+'
+            note: Through `Api.Span.add_link` and `Api.Span.add_links`, under the span limits (#6).
+          - name: Links order is preserved
+            status: '+'
+            note: A span keeps its links in the order added (#6).
+      - heading: '[Span events](specification/trace/api.md#add-events)'
+        features:
+          - name: AddEvent
+            status: '-'
+            partial: Events with an explicit timestamp, through `Api.Span.add_event_at`, and the events
+              that a forked computation returns, through `Api.Span.add_events` (#6).
+            ticket: 7
+          - name: Add order preserved
+            status: '+'
+            note: A span keeps its events in the order added (#6).
+          - name: Safe for concurrent calls
+            status: 'N/A'
+            reason: A span has one owner (#2); only the computation that holds it records into it, and a
+              forked computation starts spans of its own and hands events back as data.
+      - heading: '[Span exceptions](specification/trace/api.md#record-exception)'
+        features:
+          - name: RecordException
+            status: '-'
+            partial: With an explicit timestamp, through `Api.Span.record_exception`, as the event
+              `exception` with `exception.type` and `exception.message` and no stack trace (#6).
+            ticket: 7
+          - name: RecordException with extra parameters
+            status: '-'
+            partial: With an explicit timestamp, through `Api.Span.record_exception_with` (#6).
+            ticket: 7
+      - heading: '[Sampling](specification/trace/sdk.md#sampling)'
+        features:
+          - name: Allow samplers to modify tracestate
+            status: '-'
+            ticket: 14
+          - name: ShouldSample gets full parent Context
+            status: '-'
+            ticket: 14
+          - name: 'Sampler: JaegerRemoteSampler'
+            status: '-'
+            reason: Out of scope of the SDK (#11).
+          - name: '[New Span ID created also for non-recording Spans](specification/trace/sdk.md#sdk-span-creation)'
+            status: '-'
+            ticket: 15
+          - name: '[IdGenerators](specification/trace/sdk.md#id-generators)'
+            status: '-'
+            ticket: 16
+          - name: '[SpanLimits](specification/trace/sdk.md#span-limits)'
+            status: '-'
+            partial: The span limits have the defaults of the specification and spans enforce them
+              (#6), and the configuration of the SDK sets them in code and from the environment (#12).
+            ticket: 15
+          - name: '[Built-in `SpanProcessor`s implement `ForceFlush` spec](specification/trace/sdk.md#forceflush-1)'
+            status: '-'
+            ticket: 17
+          - name: '[Attribute Limits](specification/common/README.md#attribute-limits)'
+            status: '-'
+            partial: Attribute limits bound the count and the value length of the attributes of spans,
+              events and links, truncating strings (#6), and the general limits are read from the
+              environment (#12).
+            ticket: 15
+          - name: Fetch InstrumentationScope from ReadableSpan
+            status: '-'
+            partial: The span data that the SDK will hand to processors and exporters carries the
+              instrumentation scope, which `Api.SpanData.scope` reads (#6).
+            ticket: 15
+          - name: '[TraceIdRatioBased sampler implements OpenTelemetry tracestate `th` field](specification/trace/sdk.md#traceidratiobased)'
+            status: '-'
+            ticket: 14
+          - name: '[CompositeSampler and built-in ComposableSamplers](specification/trace/sdk.md#compositesampler)'
+            status: '-'
+            reason: Out of scope of the SDK (#11); the specification marks it Development.
+          - name: '[Sampler: AlwaysRecord](specification/trace/sdk.md#alwaysrecord)'
+            status: '-'
+            reason: Out of scope of the SDK (#11).
+  - name: Baggage
+    features:
+      - name: Basic support
+        status: '-'
+        ticket: 29
+      - name: Use official header name `baggage`
+        status: '-'
+        ticket: 29
+  - name: Metrics
+    features:
+      - name: The API provides a way to set and get a global default `MeterProvider`.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: It is possible to create any number of `MeterProvider`s.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: '`MeterProvider` provides a way to get a `Meter`.'
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: '`get_meter` accepts name, `version` and `schema_url`.'
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: '`get_meter` accepts `attributes`.'
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: When an invalid `name` is specified a working `Meter` implementation is returned as a fallback.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The fallback `Meter` `name` property keeps its original invalid value.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Associate `Meter` with `InstrumentationScope`.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: '`Counter` instrument is supported.'
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: '`AsynchronousCounter` instrument is supported.'
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: '`Histogram` instrument is supported.'
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: '`AsynchronousGauge` instrument is supported.'
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: '`Gauge` instrument is supported.'
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: '`UpDownCounter` instrument is supported.'
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: '`AsynchronousUpDownCounter` instrument is supported.'
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Instruments have `name`
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Instruments have kind.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Instruments have an optional unit of measure.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Instruments have an optional description.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name:
+          A valid instrument MUST be created and warning SHOULD be emitted when multiple instruments are registered under
+          the same `Meter` using the same `name`.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Duplicate instrument registration name conflicts are resolved by using the first-seen for the stream name.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: It is possible to register two instruments with same `name` under different `Meter`s.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Instrument names conform to the specified syntax.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Instrument units conform to the specified syntax.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Instrument descriptions conform to the specified syntax.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Instrument supports the advisory ExplicitBucketBoundaries parameter.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Instrument supports the advisory Attributes parameter.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Synchronous instruments support Bind to pre-associate attributes.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: All methods of `MeterProvider` are safe to be called concurrently.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: All methods of `Meter` are safe to be called concurrently.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: All methods of any instrument are safe to be called concurrently.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: '`MeterProvider` allows a `Resource` to be specified.'
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: A specified `Resource` can be associated with all the produced metrics from any `Meter` from the `MeterProvider`.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name:
+          The supplied `name`, `version` and `schema_url` arguments passed to the `MeterProvider` are used to create an `InstrumentationLibrary`
+          instance stored in the `Meter`.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name:
+          The supplied `name`, `version` and `schema_url` arguments passed to the `MeterProvider` are used to create an `InstrumentationScope`
+          instance stored in the `Meter`.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Configuration is managed solely by the `MeterProvider`.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `MeterProvider` provides methods to update the configuration
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The updated configuration applies to all already returned `Meter`s.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: There is a way to register `View`s with a `MeterProvider`.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `View` instrument selection criteria is as specified.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `View` instrument selection criteria supports wildcards.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `View` instrument selection criteria supports the match-all wildcard.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `View` allows configuring the name, description, attributes keys and aggregation of the resulting metric stream.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `View` allows configuring excluded attribute keys of resulting metric stream.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `View` allows configuring the exemplar reservoir of resulting metric stream.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The SDK allows more than one `View` to be specified per instrument.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `MeterProvider` supports configuring `view_matching_mode` to enable composable View matching.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `Drop` aggregation is available.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `Default` aggregation is available.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `Default` aggregation uses the specified aggregation by instrument.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `Sum` aggregation is available.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `LastValue` aggregation is available.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `ExplicitBucketHistogram` aggregation is available.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The `ExponentialBucketHistogram` aggregation is available.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Reader implementation supports registering metric Exporters
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Reader implementation supports configuring the default aggregation on the basis of instrument kind.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Reader implementation supports configuring the default temporality on the basis of instrument kind.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Exporter has access to the aggregated metrics data (aggregated points, not raw measurements).
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Exporter `export` function can not be called concurrently from the same Exporter instance.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Exporter `export` function does not block indefinitely.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Exporter `export` function receives a batch of metrics.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Exporter `export` function returns `Success` or `Failure`.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Exporter provides a `ForceFlush` function.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Exporter `ForceFlush` can inform the caller whether it succeeded, failed or timed out.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Exporter provides a `shutdown` function.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics Exporter `shutdown` function do not block indefinitely.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics SDK samples `Exemplar`s from measurements.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Exemplar sampling can be disabled.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics SDK supports SDK-wide exemplar filter configuration
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics SDK supports `TraceBased` exemplar filter
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics SDK supports `AlwaysOn` exemplar filter
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics SDK supports `AlwaysOff` exemplar filter
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Exemplars retain any attributes available in the measurement that are not preserved by aggregation or view configuration.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Documentation notes that View-filtered attributes may still appear on Exemplars.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name:
+          Exemplars contain the associated trace id and span id of the active span in the Context when the measurement was
+          taken.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Exemplars contain the timestamp when the measurement was taken.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metrics SDK provides an `ExemplarReservoir` interface or extension point.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: An `ExemplarReservoir` has an `offer` method with access to the measurement value, attributes, `Context` and timestamp.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name:
+          The metrics SDK provides a `SimpleFixedSizeExemplarReservoir` that is used by default for all aggregations except
+          `ExplicitBucketHistogram`.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name:
+          The metrics SDK provides an `AlignedHistogramBucketExemplarReservoir` that is used by default for `ExplicitBucketHistogram`
+          aggregation.
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: A metric Producer accepts an optional metric Filter
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metric Reader implementation supports registering metric Filter and passing them  its registered metric Producers
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metric SDK's metric Producer implementations uses the metric Filter
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Metric SDK implements [cardinality limit](./specification/metrics/sdk.md#cardinality-limits)
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Metric SDK supports configuring cardinality limit at MeterReader level
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Metric SDK supports configuring cardinality limit per metric (using Views)
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Metric SDK supports per-timeseries cumulative start timestamps
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: The metric SDK's periodic Reader implementation supports the `maxExportBatchSize` parameter
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+  - name: Logs
+    features:
+      - name: LoggerProvider.Get Logger
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: LoggerProvider.Get Logger accepts attributes
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: LoggerProvider.Shutdown
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: LoggerProvider.ForceFlush
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Logger.Emit(LogRecord)
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Logger.Emit(LogRecord) with Exception parameter
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: LogRecord.Set EventName
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Logger.Enabled
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Ergonomic API
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: SimpleLogRecordProcessor
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: BatchLogRecordProcessor
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Can plug custom LogRecordProcessor
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: LogRecordProcessor.Enabled
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTLP/gRPC exporter
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTLP/HTTP exporter
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTLP File exporter
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Can plug custom LogRecordExporter
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: Trace Context Injection
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+  - name: Resource
+    features:
+      - name: Create from Attributes
+        status: '+'
+        note: Through `Sdk.Resource.create`, from attributes and a schema URL (#12).
+      - name: Create empty
+        status: '+'
+        note: Through `Sdk.Resource.empty` (#12).
+      - name: '[Merge (v2)](specification/resource/sdk.md#merge)'
+        status: '-'
+        ticket: 13
+      - name: Retrieve attributes
+        status: '+'
+        note: Through `Sdk.Resource.attributes` (#12).
+      - name:
+          '[Default value](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/resource/README.md#semantic-attributes-with-dedicated-environment-variable)
+          for service.name'
+        status: '-'
+        ticket: 13
+      - name: '[Resource detector](specification/resource/sdk.md#detecting-resource-information-from-the-environment) interface/mechanism'
+        status: '-'
+        ticket: 13
+      - name: '[Resource detectors populate Schema URL](specification/resource/sdk.md#detecting-resource-information-from-the-environment)'
+        status: '-'
+        ticket: 13
+  - name: Context Propagation
+    features:
+      - name: Create Context Key
+        status: 'N/A'
+        reason: The context is a closed record with a field for each concern of the API, which that
+          concern reads and sets with its own operations, such as `Api.Context.span_context` (#5);
+          there are no keys (#2).
+      - name: Get value from Context
+        status: 'N/A'
+        reason: The context is a closed record with a field for each concern of the API, which that
+          concern reads and sets with its own operations, such as `Api.Context.span_context` (#5);
+          there are no keys (#2).
+      - name: Set value for Context
+        status: 'N/A'
+        reason: The context is a closed record with a field for each concern of the API, which that
+          concern reads and sets with its own operations, such as `Api.Context.span_context` (#5);
+          there are no keys (#2).
+      - name: Attach Context
+        status: 'N/A'
+        reason: There is no implicit context; every operation that needs a parent takes a context
+          passed explicitly (#2), as Go records it.
+      - name: Detach Context
+        status: 'N/A'
+        reason: There is no implicit context; every operation that needs a parent takes a context
+          passed explicitly (#2), as Go records it.
+      - name: Get current Context
+        status: 'N/A'
+        reason: There is no implicit context; every operation that needs a parent takes a context
+          passed explicitly (#2), as Go records it.
+      - name: Composite Propagator
+        status: '-'
+        ticket: 28
+      - name: Global Propagator
+        status: 'N/A'
+        reason: Bend has no global state; instrumentation takes the propagator from the tracer
+          provider it receives, the dependency injection that the specification allows (#26).
+      - name: TraceContext Propagator
+        status: '-'
+        ticket: 28
+      - name: B3 Propagator
+        status: '-'
+        ticket: 30
+      - name: Jaeger Propagator
+        status: '-'
+        reason: Out of scope (#26); the specification deprecates it.
+      - name: OT Propagator
+        status: '-'
+        reason: Out of scope (#26); the specification deprecates it.
+      - name: OpenCensus Binary Propagator
+        status: '-'
+        reason: Out of scope (#26).
+      - name: '[TextMapPropagator](specification/context/api-propagators.md#textmap-propagator)'
+        status: '-'
+        ticket: 28
+      - name: Fields
+        status: '-'
+        ticket: 28
+      - name: Setter argument
+        status: '-'
+        ticket: 28
+      - name: Getter argument
+        status: '-'
+        ticket: 28
+      - name: Getter argument returning Keys
+        status: '-'
+        ticket: 28
+      - name: '[Environment Variables as Context Propagation Carriers](specification/context/env-carriers.md)'
+        status: '-'
+        ticket: 31
+  - name: Environment Variables
+    features:
+      - name: OTEL_SDK_DISABLED
+        status: '-'
+        partial: Read into the configuration (#12).
+        ticket: 15
+      - name: OTEL_RESOURCE_ATTRIBUTES
+        status: '-'
+        partial: Read and kept as text in the configuration (#12).
+        ticket: 13
+      - name: OTEL_SERVICE_NAME
+        status: '-'
+        partial: Read into the configuration (#12).
+        ticket: 13
+      - name: OTEL_LOG_LEVEL
+        status: '+'
+        note: Sets the level below which the stderr reporter drops the diagnostics of the SDK (#12).
+      - name: OTEL_PROPAGATORS
+        status: '-'
+        ticket: 32
+      - name: OTEL_BSP_*
+        status: '-'
+        partial: Read into the options of the batch processor (#12).
+        ticket: 17
+      - name: OTEL_BLRP_*
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTEL_EXPORTER_OTLP_*
+        status: '-'
+        partial: Read and kept as text in the configuration, with their traces variants (#12); the
+          tickets of the OTLP exporter give each its meaning.
+        ticket: 19
+      - name: OTEL_EXPORTER_ZIPKIN_*
+        status: '-'
+        reason: The specification deprecates the Zipkin exporter, which this project leaves out
+          (#19).
+      - name: OTEL_TRACES_EXPORTER
+        status: '-'
+        partial: Read into the configuration (#12); its default, `otlp`, selects the OTLP exporter
+          once that exists (#21).
+        ticket: 16
+      - name: OTEL_METRICS_EXPORTER
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTEL_LOGS_EXPORTER
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT
+        status: '-'
+        partial: Read into the span limits (#12).
+        ticket: 15
+      - name: OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT
+        status: '-'
+        partial: Read into the span limits (#12).
+        ticket: 15
+      - name: OTEL_SPAN_EVENT_COUNT_LIMIT
+        status: '-'
+        partial: Read into the span limits (#12).
+        ticket: 15
+      - name: OTEL_SPAN_LINK_COUNT_LIMIT
+        status: '-'
+        partial: Read into the span limits (#12).
+        ticket: 15
+      - name: OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT
+        status: '-'
+        partial: Read into the span limits (#12).
+        ticket: 15
+      - name: OTEL_LINK_ATTRIBUTE_COUNT_LIMIT
+        status: '-'
+        partial: Read into the span limits (#12).
+        ticket: 15
+      - name: OTEL_LOGRECORD_ATTRIBUTE_COUNT_LIMIT
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTEL_LOGRECORD_ATTRIBUTE_VALUE_LENGTH_LIMIT
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTEL_TRACES_SAMPLER
+        status: '-'
+        partial: Read into the configuration (#12).
+        ticket: 14
+      - name: OTEL_TRACES_SAMPLER_ARG
+        status: '-'
+        partial: Read and kept as text in the configuration (#12).
+        ticket: 14
+      - name: OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT
+        status: '-'
+        partial: Read into the span limits, for spans, events and links (#12).
+        ticket: 15
+      - name: OTEL_ATTRIBUTE_COUNT_LIMIT
+        status: '-'
+        partial: Read into the span limits, for spans, events and links (#12).
+        ticket: 15
+      - name: OTEL_METRIC_EXPORT_INTERVAL
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTEL_METRIC_EXPORT_TIMEOUT
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTEL_METRICS_EXEMPLAR_FILTER
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION
+        status: '-'
+        reason: This project implements traces only, for now (#1).
+      - name: OTEL_CONFIG_FILE
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+  - name: Declarative configuration
+    features:
+      - name: '`Parse` a configuration file'
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: The `Parse` operation accepts the configuration YAML file format
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: The `Parse` operation performs environment variable substitution
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: The `Parse` operation returns configuration model
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: The `Parse` operation resolves plugin component configuration to `properties`
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: '`Create` SDK components'
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: The `Create` operation accepts configuration model
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: The `Create` operation returns `TracerProvider`
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: The `Create` operation returns `MeterProvider`
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: The `Create` operation returns `LoggerProvider`
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: The `Create` operation returns `Propagators`
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: The `Create` operation calls `CreateComponent` of corresponding `PluginComponentProvider` when encountering plugin components
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+      - name: Register a `PluginComponentProvider`
+        status: '-'
+        reason: Declarative configuration is out of scope of the API (#2) and the SDK (#11).
+  - name: Exporters
+    features:
+      - name: '[Exporter interface](specification/trace/sdk.md#span-exporter)'
+        status: '-'
+        ticket: 16
+      - name: '[Exporter interface has `ForceFlush`](specification/trace/sdk.md#forceflush-2)'
+        status: '-'
+        ticket: 16
+      - name: Standard output (logging)
+        status: '-'
+        ticket: 15
+      - name: In-memory (mock exporter)
+        status: '-'
+        ticket: 15
+      - heading: '**[OTLP](specification/protocol/otlp.md)**'
+        features:
+          - name: OTLP/gRPC Exporter
+            status: '-'
+            reason: The OTLP exporter sends OTLP/HTTP only; the specification requires one transport
+              and recommends http/protobuf when there is one (#19).
+          - name: OTLP/HTTP binary Protobuf Exporter
+            status: '-'
+            ticket: 21
+          - name: OTLP/HTTP JSON Protobuf Exporter
+            status: '-'
+            ticket: 22
+          - name: OTLP/HTTP gzip Content-Encoding support
+            status: '-'
+            ticket: 24
+          - name: Enforces request size limit
+            status: '-'
+            ticket: 21
+          - name: Enforces response size limit
+            status: '-'
+            ticket: 21
+          - name: Concurrent sending
+            status: '-'
+            reason: Sending is sequential, one request at a time, as the export contract of the
+              processors guarantees; parallel connections are a MAY of OTLP/HTTP (#19).
+          - name: Honors retryable responses with backoff
+            status: '-'
+            ticket: 23
+          - name: Honors non-retryable responses
+            status: '-'
+            ticket: 23
+          - name: Honors throttling response
+            status: '-'
+            ticket: 23
+          - name: Multi-destination spec compliance
+            status: '-'
+            reason: A provider has one external exporter (#11), so the OTLP exporter sends to one
+              destination.
+          - name: SchemaURL in ResourceSpans and ScopeSpans
+            status: '-'
+            ticket: 20
+          - name: SchemaURL in ResourceMetrics and ScopeMetrics
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: SchemaURL in ResourceLogs and ScopeLogs
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: Honors the [user agent spec](specification/protocol/exporter.md#user-agent)
+            status: '-'
+            ticket: 21
+          - name:
+              '[Partial Success](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md#partial-success)
+              messages are handled and logged for OTLP/gRPC'
+            status: '-'
+            reason: There is no OTLP/gRPC exporter (#19).
+          - name:
+              '[Partial Success](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md#partial-success-1)
+              messages are handled and logged for OTLP/HTTP'
+            status: '-'
+            ticket: 21
+          - name: Metric Exporter configurable temporality preference
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: Metric Exporter configurable default aggregation
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+      - heading: '**[Zipkin](specification/trace/sdk_exporters/zipkin.md)**'
+        features:
+          - name: Zipkin V1 JSON
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: Zipkin V1 Thrift
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: Zipkin V2 JSON
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: Zipkin V2 Protobuf
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: Service name mapping
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: SpanKind mapping
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: InstrumentationLibrary mapping
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: InstrumentationScope mapping
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: Boolean attributes
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: Array attributes
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: Status mapping
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: Error Status mapping
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: Event attributes mapping to Annotations
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+          - name: Integer microseconds in timestamps
+            status: '-'
+            reason: The specification deprecates the Zipkin exporter, which this project leaves out
+              (#19).
+      - heading: '**Prometheus**'
+        features:
+          - name: '[Metadata Deduplication](specification/compatibility/prometheus_and_openmetrics.md#metric-metadata-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Name Sanitization](specification/compatibility/prometheus_and_openmetrics.md#metric-metadata-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[UNIT Metadata](specification/compatibility/prometheus_and_openmetrics.md#metric-metadata-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Unit Suffixes](specification/compatibility/prometheus_and_openmetrics.md#metric-metadata-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Unit Full Words](specification/compatibility/prometheus_and_openmetrics.md#metric-metadata-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[HELP Metadata](specification/compatibility/prometheus_and_openmetrics.md#metric-metadata-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[TYPE Metadata](specification/compatibility/prometheus_and_openmetrics.md#metric-metadata-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[otel_scope_name and otel_scope_version labels on all Metrics](specification/compatibility/prometheus_and_openmetrics.md#instrumentation-scope-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[otel_scope_[attribute] labels on all Metrics](specification/compatibility/prometheus_and_openmetrics.md#instrumentation-scope-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[otel_scope labels can be disabled](specification/compatibility/prometheus_and_openmetrics.md#instrumentation-scope-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Gauges become Prometheus Gauges](specification/compatibility/prometheus_and_openmetrics.md#gauges-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Cumulative Monotonic Sums become Prometheus Counters](specification/compatibility/prometheus_and_openmetrics.md#sums)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Prometheus Counters have _total suffix by default](specification/compatibility/prometheus_and_openmetrics.md#sums)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Prometheus Counters _total suffixing can be disabled](specification/compatibility/prometheus_and_openmetrics.md#sums)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Cumulative Non-Monotonic Sums become Prometheus Gauges](specification/compatibility/prometheus_and_openmetrics.md#sums)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Delta Non-Monotonic Sums become Cumulative Prometheus Counters](specification/compatibility/prometheus_and_openmetrics.md#sums)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Cumulative Histograms become Prometheus Histograms](specification/compatibility/prometheus_and_openmetrics.md#histograms-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Delta Histograms become Cumulative Prometheus Histograms](specification/compatibility/prometheus_and_openmetrics.md#histograms-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Attributes Keys are Sanitized](specification/compatibility/prometheus_and_openmetrics.md#metric-attributes)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Colliding sanitized attribute keys are merged](specification/compatibility/prometheus_and_openmetrics.md#metric-attributes)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[Exemplars for Histograms and Monotonic sums](specification/compatibility/prometheus_and_openmetrics.md#exemplar-conversion)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[`target_info` metric from Resource](specification/compatibility/prometheus_and_openmetrics.md#resource-attributes-1)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+  - name: SDK Self-Observability
+    features:
+      - heading: '**Span metrics**'
+        features:
+          - name: '[`otel.sdk.span.started`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkspanstarted)'
+            status: '-'
+            reason: Out of scope of the SDK (#11); its measurements are metrics, which this project
+              does not implement (#1), and the specification marks it Development.
+          - name: '[`otel.sdk.span.live`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkspanlive)'
+            status: '-'
+            reason: Out of scope of the SDK (#11); its measurements are metrics, which this project
+              does not implement (#1), and the specification marks it Development.
+          - name: '[`otel.sdk.processor.span.queue.size`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkprocessorspanqueuesize)'
+            status: '-'
+            reason: Out of scope of the SDK (#11); its measurements are metrics, which this project
+              does not implement (#1), and the specification marks it Development.
+          - name: '[`otel.sdk.processor.span.queue.capacity`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkprocessorspanqueuecapacity)'
+            status: '-'
+            reason: Out of scope of the SDK (#11); its measurements are metrics, which this project
+              does not implement (#1), and the specification marks it Development.
+          - name: '[`otel.sdk.processor.span.processed`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkprocessorspanprocessed)'
+            status: '-'
+            reason: Out of scope of the SDK (#11); its measurements are metrics, which this project
+              does not implement (#1), and the specification marks it Development.
+          - name: '[`otel.sdk.exporter.span.inflight`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkexporterspaninflight)'
+            status: '-'
+            reason: Out of scope of the SDK (#11); its measurements are metrics, which this project
+              does not implement (#1), and the specification marks it Development.
+          - name: '[`otel.sdk.exporter.span.exported`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkexporterspanexported)'
+            status: '-'
+            reason: Out of scope of the SDK (#11); its measurements are metrics, which this project
+              does not implement (#1), and the specification marks it Development.
+      - heading: '**Log metrics**'
+        features:
+          - name: '[`otel.sdk.log.created`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdklogcreated)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[`otel.sdk.processor.log.queue.size`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkprocessorlogqueuesize)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[`otel.sdk.processor.log.queue.capacity`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkprocessorlogqueuecapacity)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[`otel.sdk.processor.log.processed`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkprocessorlogprocessed)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[`otel.sdk.exporter.log.inflight`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkexporterloginflight)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[`otel.sdk.exporter.log.exported`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkexporterlogexported)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+      - heading: '**Metric metrics**'
+        features:
+          - name: '[`otel.sdk.exporter.metric_data_point.inflight`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkexportermetric_data_pointinflight)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[`otel.sdk.exporter.metric_data_point.exported`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkexportermetric_data_pointexported)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+      - heading: '**Shared metrics**'
+        features:
+          - name: '[`otel.sdk.metric_reader.collection.duration`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkmetric_readercollectionduration)'
+            status: '-'
+            reason: This project implements traces only, for now (#1).
+          - name: '[`otel.sdk.exporter.operation.duration`](https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/#metric-otelsdkexporteroperationduration)'
+            status: '-'
+            reason: Out of scope of the SDK (#11); its measurements are metrics, which this project
+              does not implement (#1), and the specification marks it Development.
+  - name: OpenCensus Compatibility
+    features:
+      - name: '[Trace Bridge](specification/compatibility/opencensus.md#trace-bridge)'
+        status: 'N/A'
+        reason: There is no OpenCensus implementation for Bend to bridge.
+      - name: '[Metric Bridge](specification/compatibility/opencensus.md#metrics--stats)'
+        status: 'N/A'
+        reason: There is no OpenCensus implementation for Bend to bridge.
+  - name: OpenTracing Compatibility
+    features:
+      - name: '[Create OpenTracing Shim](specification/compatibility/opentracing.md#create-an-opentracing-tracer-shim)'
+        status: 'N/A'
+        reason: There is no OpenTracing implementation for Bend to bridge.
+      - name: '[Tracer](specification/compatibility/opentracing.md#tracer-shim)'
+        status: 'N/A'
+        reason: There is no OpenTracing implementation for Bend to bridge.
+      - name: '[Span](specification/compatibility/opentracing.md#span-shim)'
+        status: 'N/A'
+        reason: There is no OpenTracing implementation for Bend to bridge.
+      - name: '[SpanContext](specification/compatibility/opentracing.md#spancontext-shim)'
+        status: 'N/A'
+        reason: There is no OpenTracing implementation for Bend to bridge.
+      - name: '[ScopeManager](specification/compatibility/opentracing.md#scopemanager-shim)'
+        status: 'N/A'
+        reason: There is no OpenTracing implementation for Bend to bridge.
+      - name: Error mapping for attributes/events
+        status: 'N/A'
+        reason: There is no OpenTracing implementation for Bend to bridge.
+      - name: Migration to OpenTelemetry guide
+        status: 'N/A'
+        reason: There is no OpenTracing implementation for Bend to bridge.

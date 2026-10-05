@@ -14,8 +14,8 @@ is the glossary, and its terms are the ones to use.
   `shasum`); `unzip` and an xz-capable `tar` for the semantic conventions
   generator.
 - Clang 14 or later for native builds (`CC` names another C compiler).
-- Node 22 or later, for the local hub, for the programs that run under Node
-  and for the qualification harness's verifier.
+- Node 22 or later, for the local hub, for the programs that run under Node,
+  for the qualification harness's verifier and for the compliance check.
 - Docker, or Podman with a compose plugin, for the qualification harness.
 
 ## Setup
@@ -51,11 +51,14 @@ uvx zizmor==1.30.1 --no-online-audits .github/workflows
 git ls-files -z -- '*.js' '*.mjs' | xargs -0 -n 1 node --check
 ./scripts/lint-lanes.sh
 ./scripts/test-lint-lanes.sh
+./scripts/compliance.sh --check
+./scripts/test-compliance.sh
 lychee --offline --include-fragments --no-progress '*.md' 'packages/**/*.md' 'qualification/**/*.md'
 ```
 
 (`lychee` v0.24 checks the local links; without it, follow the links by
-hand.) The two lane scripts are described under [Lanes](#lanes).
+hand.) The two lane scripts are described under [Lanes](#lanes), and the two
+compliance scripts under [Compliance](#compliance).
 
 `validate.sh` runs the proof gate of every package (`PROOF.bend
 --check-only` must print `ALL PROOFS CHECK`, which Bend prints only when
@@ -210,6 +213,33 @@ and not asserted:
 The weekly `Newest Bend` workflow runs the same matrix on the newest
 release: the native job on Linux and macOS, and the node job on Node 22 and
 24, each running its programs in-process as well.
+
+## Compliance
+
+[COMPLIANCE.md](COMPLIANCE.md) says, for every row of the compliance matrix
+of the OpenTelemetry specification, whether this project implements it,
+implements part of it, has it pending with the ticket that implements it, or
+does not apply and why. It is generated from the status file,
+[qualification/compliance/bend.yaml](qualification/compliance/bend.yaml),
+kept in the schema of the specification's own matrix files; the file's
+header gives its statuses and keys. A pull request that implements a row,
+or part of one, updates that row of the status file in the same pull
+request, and regenerates the document, which is never edited by hand:
+
+```sh
+./scripts/compliance.sh
+```
+
+`./scripts/compliance.sh --check`, which CI runs in the `quality` job, fails
+when `qualification/compliance/template.yaml` is not the specification's
+template at the pinned release, checked by its SHA-256; when the status file
+does not classify every row of that template, once, in its order, and no
+other; when a row has a status outside the specification's legend, or is not
+implemented and names neither its ticket nor the reason it does not apply;
+and when `COMPLIANCE.md` differs from the regeneration.
+`./scripts/test-compliance.sh` shows each of these failures on a scratch copy
+of the files. The header of `scripts/compliance.sh` says how to move to a
+newer release of the specification, which `--fetch` downloads and checks.
 
 ## The Bend pin
 
