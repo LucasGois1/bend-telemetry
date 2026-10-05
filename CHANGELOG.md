@@ -116,3 +116,20 @@ exercises every operation on a recording and a non-recording span with
 tight limits, and the reference documents the span, its states and its
 operations, and the register limits of the native lane that a span meets
 (#60).
+
+`bend-telemetry-api` gains the trace flags and the remote span context from
+parts (#10). `SpanContext.trace_flags` answers the known flags of the wrapped
+context as a number from 0 to 3, the sampled indication in bit 0 and the
+trace ID's random-trace-id assertion in bit 1, as bend-trace-context 0.2.0
+exposes them; `SpanContext.remote_from_parts` builds a remote span context
+from a trace ID, a span ID, a sampled indication and a tracestate through
+bend-trace-context's constructors from parts, for links and for propagators
+of other formats, and it keeps no received pair, so forwarding it through
+bend-trace-context answers nothing to forward. The laws say that the flags
+are the wrapped context's, that a local span context's flags are those of
+the traceparent it emits and a remote one's its known flags, never above 3,
+that the readers of a span context built from parts answer the parts, and
+what forwarding answers for it. The consumer builds one from the W3C example
+identifiers, prints the flags of every span context it holds, links a span to
+it and prints what forwarding answers, holding it in a one-element list for
+the native lane (#60); the reference documents both.

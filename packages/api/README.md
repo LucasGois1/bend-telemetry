@@ -12,12 +12,14 @@ of, or endorsed by, the OpenTelemetry project.
 **Status: in development.** This package holds the pure values of the API
 ([#4](https://github.com/LucasGois1/bend-telemetry/issues/4)): attribute
 values, attributes, span limits and timestamps; the span context and the
-explicit context ([#5](https://github.com/LucasGois1/bend-telemetry/issues/5));
-and the span with its two states, recording and non-recording, its pure
-operations, its events, links, status, kinds, start options and
-instrumentation scope ([#6](https://github.com/LucasGois1/bend-telemetry/issues/6)).
-Tracers, span start and end, the SDK slots and the no-op implementation
-follow in later tickets, and nothing is published on BendHub yet.
+explicit context ([#5](https://github.com/LucasGois1/bend-telemetry/issues/5)),
+with the trace flags and the remote span context from parts
+([#10](https://github.com/LucasGois1/bend-telemetry/issues/10)); and the span
+with its two states, recording and non-recording, its pure operations, its
+events, links, status, kinds, start options and instrumentation scope
+([#6](https://github.com/LucasGois1/bend-telemetry/issues/6)). Tracers, span
+start and end, the SDK slots and the no-op implementation follow in later
+tickets, and nothing is published on BendHub yet.
 
 A program imports the package by its BendHub name and version, never by a
 relative path, and bend-trace-context beside it for the W3C Trace Context
@@ -42,7 +44,9 @@ is a complete program over these values with its exact output beside it.
 - [Span limits](#span-limits): `SpanLimits`, `AttributeLimits` and
   `Attributes.set_within`
 - [Timestamps](#timestamps): `Timestamp`
-- [Span context](#span-context): `SpanContext`, remote or local
+- [Span context](#span-context): `SpanContext`, remote or local, with its
+  [trace flags](#trace-flags) and the
+  [remote span context from parts](#remote-span-contexts-from-parts)
 - [Context](#context): `Context`, the explicit context
 - [Instrumentation scope](#instrumentation-scope): `InstrumentationScope`
 - [Span options](#span-options): `SpanOptions` and the kinds, `SpanKind`
@@ -261,12 +265,13 @@ own operation.
 
 | Variant | Wraps | Built by |
 | --- | --- | --- |
-| `RemoteSpanContext{incoming}` | `TC.IncomingContext` | `Api.SpanContext.remote(incoming)` |
+| `RemoteSpanContext{incoming}` | `TC.IncomingContext` | `Api.SpanContext.remote(incoming)`, or `Api.SpanContext.remote_from_parts(trace_id, span_id, sampled, state)` from [parts](#remote-span-contexts-from-parts) |
 | `LocalSpanContext{outgoing}` | `TC.OutgoingContext` | `Api.SpanContext.local(outgoing)` |
 
 A remote span context comes from a received message, through
 bend-trace-context's extraction (`TC.Extraction.incoming` of
-`TC.Context.extract`). A local one comes from an operation of this
+`TC.Context.extract`), or from its parts, for a link or a propagator of
+another format (below). A local one comes from an operation of this
 participant: an SDK builds the outgoing context with `TC.Context.from_ids`
 and `TC.OutgoingContext.new`, or `TC.OutgoingContext.with_state` to send a
 tracestate.
@@ -283,15 +288,16 @@ variant:
 | `Api.SpanContext.trace_id_hex(context)` | The trace ID as its 32 lowercase hexadecimal digits |
 | `Api.SpanContext.span_id_hex(context)` | The span ID as its 16 lowercase hexadecimal digits |
 | `Api.SpanContext.is_sampled(context)` | The sampled indication |
+| `Api.SpanContext.trace_flags(context)` | The [trace flags](#trace-flags) as a `U32` from 0 to 3: the sampled indication in bit 0, the trace ID's random-trace-id assertion in bit 1 |
 | `Api.SpanContext.tracestate(context)` | The tracestate, as a `TC.TraceState` (`TC.TraceState.format` gives its text) |
 | `Api.SpanContext.incoming(context)` | `Some{incoming}` for a remote span context, `None{}` for a local one |
 | `Api.SpanContext.outgoing(context)` | `Some{outgoing}` for a local span context, `None{}` for a remote one |
 
 Each reader agrees with the field of the wrapped context (laws
-`remote_readers`, `local_readers` and `hex_readers`), and the variant tells
-remote from local (laws `span_context_remote` and `span_context_local`). For
-example, the remote span context of a received message, when its traceparent
-was accepted:
+`remote_readers`, `local_readers`, `hex_readers` and `wrapped_flags`), and
+the variant tells remote from local (laws `span_context_remote` and
+`span_context_local`). For example, the remote span context of a received
+message, when its traceparent was accepted:
 
 ```bend
 def remote(extracted: Maybe<&2, TC.IncomingContext>) -> Maybe<&2, Api.SpanContext>:
@@ -304,9 +310,73 @@ def remote(extracted: Maybe<&2, TC.IncomingContext>) -> Maybe<&2, Api.SpanContex
 # remote(TC.Extraction.incoming(TC.Context.extract(TC.Limits.default(), carrier, None{})))
 ```
 
-Trace flags as a number from 0 to 3, and a remote span context built from a
-trace ID, a span ID, a sampled indication and a tracestate, come with
-[#10](https://github.com/LucasGois1/bend-telemetry/issues/10).
+### Trace flags
+
+`Api.SpanContext.trace_flags(context)` is the known flags of the wrapped
+context as a number from 0 to 3, as bend-trace-context exposes them
+(`TC.RemoteContext.flags` and `TC.LocalContext.flags`): bit 0 is the sampled
+indication and bit 1 the trace ID's random-trace-id assertion; the six
+reserved bits of the flag byte are never among them. The Booleans stay the
+canonical form, `Api.SpanContext.is_sampled` and `TC.TraceId.is_random`; the
+number is for an exporter, which writes it into OTLP's `Span.flags` field.
+For a local span context it is the flag byte of the traceparent the context
+emits, `00` to `03`, so the exported span and the propagated context agree
+(law `local_flags`); for a remote one it is the known flags it was received
+or built with (law `remote_flags`); for either it is the flags of the wrapped
+context (law `wrapped_flags`), never above 3 (law `flags_bounded`). A parsed
+identifier asserts no randomness: the remote span context of a traceparent
+with flags `01` has trace flags 1, a local one that is not sampled has 0, and
+one built from parts whose trace ID the caller asserted random with
+`TC.TraceId.assert_random` has 3 when sampled, as the consumer prints.
+
+### Remote span contexts from parts
+
+An SDK builds a remote span context from its parts for a link to a span of
+another trace and for a propagator of another format, such as B3
+([#26](https://github.com/LucasGois1/bend-telemetry/issues/26)):
+
+```bend
+Api.SpanContext.remote_from_parts(trace_id: TC.TraceId, span_id: TC.SpanId, sampled: Bool, state: TC.TraceState)
+```
+
+It wraps the incoming context that bend-trace-context builds from them,
+`TC.IncomingContext.from_remote` of `TC.RemoteContext.from_ids`, and it is
+total: the identifiers are valid by construction, since every constructor of
+bend-trace-context's identifiers refuses an all-zero one, so there is nothing
+left to refuse here. The parts are kept as they are: `is_remote` answers
+`True{}`, and the readers answer the trace ID, the span ID, the sampled
+indication and the tracestate it was built from (law `parts_readers`); its
+trace flags are that sampled indication and the trace ID's own randomness
+assertion (law `parts_flags`). The constructor takes a sampled indication
+rather than flags because bend-trace-context's does: the random-trace-id
+flag is an assertion about the trace ID, which `TC.TraceId.assert_random`
+makes when the caller knows the identifier to be random, never a loose bit.
+
+A span context built from parts arrived in no message, so it keeps no
+received pair, and `TC.Context.forward`, which sends a received context on
+unchanged, answers `Fail{TC.NothingToForward{}}` for the incoming context it
+wraps (law `parts_not_forwarded`): a service that holds one continues it
+with a child or injects its own operation, and never writes a traceparent
+again from parts with a tracestate of its choosing (W3C Trace Context,
+section 3.4). The remote span context of an extracted message keeps its
+received pair and is forwarded as it came. For example, the span context of
+a link, from identifiers parsed from hex and a tracestate:
+
+```bend
+def linked_to(parsed_trace: Result<&2, &2, TC.Error, TC.TraceId>, parsed_span: Result<&2, &2, TC.Error, TC.SpanId>,
+  state: TC.TraceState) -> Maybe<&2, Api.SpanContext>:
+  match parsed_trace parsed_span:
+    case Done{trace} Done{span}:
+      Some{Api.SpanContext.remote_from_parts(trace, span, True{}, state)}
+    case _ _:
+      None{}
+
+# linked_to(TC.TraceId.parse("0af7651916cd43dd8448eb211c80319c"), TC.SpanId.parse("b7ad6b7169203331"), TC.TraceState.empty())
+```
+
+The consumer builds one from the W3C example identifiers, prints its readers
+and its flags, links a span to it and prints what forwarding answers for it
+and for an extracted one.
 
 ### Absence in place of an invalid span context
 
@@ -626,8 +696,12 @@ and the readers of the opaque numbers.
 
 The laws of the span context and the context say that the variant tells
 remote from local, that each reader agrees with the field of the wrapped
-context, and that a context answers the span context set on it and none when
-it is empty or cleared.
+context, that the trace flags are the wrapped context's, a local span
+context's being the flags of the traceparent it emits and a remote one's its
+known flags, never above 3, that a span context built from parts is remote,
+answers its parts and keeps no received pair, so that forwarding it through
+bend-trace-context answers nothing to forward, and that a context answers
+the span context set on it and none when it is empty or cleared.
 
 The laws of spans say that every operation on a recording span is the
 operation on its data with the payload untouched, and the identity on a
@@ -674,10 +748,11 @@ their expected output natively and on Node.
   that takes a span and two span contexts, or a loop that reads a reusable
   span twice does not compile natively, while the JavaScript lane has no
   such limit. The shapes that compile are those of the consumer: carry a
-  span between steps inside a one-element list, which Bend keeps boxed,
-  apply one operation per iteration of a recursive definition, read a span
-  once per helper, and match `SpanData` once rather than calling several
-  readers on a copy. The limit and its options are tracked in
+  span between steps inside a one-element list, which Bend keeps boxed, and
+  a span context the same way once a definition holds four of them, apply
+  one operation per iteration of a recursive definition, read a span once
+  per helper, and match `SpanData` once rather than calling several readers
+  on a copy. The limit and its options are tracked in
   [#60](https://github.com/LucasGois1/bend-telemetry/issues/60).
 - Numbers have no hexadecimal literals, and a `Nat` literal stops at
   `4294967295n`: build a larger `Nat` with `Nat.mul` and `Nat.add`, as the

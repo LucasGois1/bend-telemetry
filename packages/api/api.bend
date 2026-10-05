@@ -14,13 +14,14 @@ import ./src/limbs.bend as Limbs
 # pure values of the API (#4): attribute values with their 64-bit integers
 # and doubles, attributes and the attribute collection, span limits and
 # their enforcement, and timestamps; the span context and the explicit
-# context (#5); and the span with its two states, recording and
-# non-recording, its pure operations, its events, links, status, kinds,
-# start options and instrumentation scope (#6). Tracers, span start and end
-# and the SDK slots follow in later tickets. The package imports no foreign
-# code, so that every library that depends on it stays provable; the claims
-# this code must satisfy are stated in LAWS.bend and proved in PROOF.bend,
-# beside this file. README.md beside this file is the reference.
+# context (#5), with the trace flags and the remote span context from parts
+# (#10); and the span with its two states, recording and non-recording, its
+# pure operations, its events, links, status, kinds, start options and
+# instrumentation scope (#6). Tracers, span start and end and the SDK slots
+# follow in later tickets. The package imports no foreign code, so that
+# every library that depends on it stays provable; the claims this code must
+# satisfy are stated in LAWS.bend and proved in PROOF.bend, beside this
+# file. README.md beside this file is the reference.
 #
 # W3C Trace Context comes from bend-trace-context, imported by its BendHub
 # name and version, never by a relative path (#1). The glossary of the
@@ -851,12 +852,22 @@ def Timestamp.is_ge(a: Timestamp, b: Timestamp) -> Bool:
 # There is no invalid span context, and no all-zero identity. Where the
 # OpenTelemetry specification has one, this API has an absence: `None{}` of
 # a `Maybe<&2, SpanContext>`. A context may carry no span context, and a span
-# started without an SDK and without a parent has none (#2). Trace flags as a
-# number and a remote span context built from parts come with #10.
+# started without an SDK and without a parent has none (#2).
+#
+# The trace flags (#10) are the known flags of the wrapped context as a
+# number from 0 to 3: the sampled indication in bit 0 and the trace ID's
+# random-trace-id assertion in bit 1, as bend-trace-context exposes them
+# (TC.RemoteContext.flags and TC.LocalContext.flags). The Booleans stay the
+# canonical form; the number is for an exporter, which writes it into OTLP's
+# Span.flags field. A remote span context is also built from its parts
+# (#10), for a link and for a propagator of another format: it wraps the
+# incoming context that bend-trace-context builds from a remote context from
+# identifiers and a tracestate. That context arrived in no message, so it
+# keeps no received pair and cannot be forwarded as if it had.
 
 # A remote span context: the incoming context that extraction gave for a
-# received message, or one built from parts with TC.IncomingContext.from_remote
-# (laws span_context_remote and remote_readers).
+# received message, or one built from parts, as SpanContext.remote_from_parts
+# builds it (laws span_context_remote and remote_readers).
 def SpanContext.remote(incoming: TC.IncomingContext) -> SpanContext:
   RemoteSpanContext{incoming}
 
@@ -864,6 +875,20 @@ def SpanContext.remote(incoming: TC.IncomingContext) -> SpanContext:
 # with the tracestate it sends (laws span_context_local and local_readers).
 def SpanContext.local(outgoing: TC.OutgoingContext) -> SpanContext:
   LocalSpanContext{outgoing}
+
+# A remote span context from its parts, for a link and for a propagator of
+# another format: the sender's trace ID, span ID and sampled indication, kept
+# as they are, with the tracestate that goes with them. It wraps the incoming
+# context bend-trace-context builds from them, TC.IncomingContext.from_remote
+# of TC.RemoteContext.from_ids. It is total, since the identifiers are valid
+# by construction, and its random-trace-id flag is the trace ID's own
+# assertion, which a parsed identifier lacks unless TC.TraceId.assert_random
+# adds it. It arrived in no message, so it keeps no received pair, and
+# TC.Context.forward answers NothingToForward for it (laws parts_readers,
+# parts_flags and parts_not_forwarded).
+def SpanContext.remote_from_parts(trace_id: TC.TraceId, span_id: TC.SpanId, sampled: Bool,
+  state: TC.TraceState) -> SpanContext:
+  RemoteSpanContext{TC.IncomingContext.from_remote(TC.RemoteContext.from_ids(trace_id, span_id, sampled), state)}
 
 # Whether the span context was received from another participant.
 def SpanContext.is_remote(context: SpanContext) -> Bool:
@@ -898,6 +923,20 @@ def SpanContext.is_sampled(context: SpanContext) -> Bool:
       TC.RemoteContext.is_sampled(TC.IncomingContext.context(incoming))
     case LocalSpanContext{outgoing}:
       TC.LocalContext.is_sampled(TC.OutgoingContext.context(outgoing))
+
+# The trace flags as a number from 0 to 3: the sampled indication in bit 0
+# and the trace ID's random-trace-id assertion in bit 1, the known flags of
+# the wrapped context as bend-trace-context exposes them; the reserved bits
+# are never among them. For a local span context it is the flag byte of the
+# traceparent it emits, 00 to 03, so an exporter that writes it agrees with
+# what the context propagates (laws wrapped_flags, local_flags, remote_flags
+# and flags_bounded).
+def SpanContext.trace_flags(context: SpanContext) -> U32:
+  match context:
+    case RemoteSpanContext{incoming}:
+      TC.RemoteContext.flags(TC.IncomingContext.context(incoming))
+    case LocalSpanContext{outgoing}:
+      TC.LocalContext.flags(TC.OutgoingContext.context(outgoing))
 
 # The tracestate: the vendor state received with a remote span context, or
 # the state a local one sends.

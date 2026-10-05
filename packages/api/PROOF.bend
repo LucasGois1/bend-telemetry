@@ -1,6 +1,7 @@
 import Base
 import ./LAWS.bend as Laws
 import ./api.bend as Api
+import bend-trace-context@0.2.0.0/trace_context.bend as TC
 import ./proofs/bools.bend as BoolsProof
 import ./proofs/strings.bend as StringsProof
 import ./proofs/nats.bend as NatsProof
@@ -285,6 +286,86 @@ def Laws.local_readers(outgoing):
 # By computation: each hexadecimal reader is defined as the digits of the
 # value reader.
 def Laws.hex_readers(context):
+  ({==}, {==})
+
+# By computation: each variant reads the flags of the context it wraps.
+def Laws.wrapped_flags(incoming, outgoing):
+  ({==}, {==})
+
+# By computation in each of the four combinations of sampled and random,
+# once the outgoing context, its local context and its trace ID are opened:
+# the flags compute to the literal number, and the second equation reads
+# the flag byte of the emitted traceparent back to the same two Booleans.
+def Laws.local_flags(outgoing):
+  match outgoing:
+    case TC.OutgoingContext{TC.LocalContext{TC.TraceId{trace_id, False{}}, TC.SpanId{span_id}, False{}}, state}:
+      ({==}, {==})
+    case TC.OutgoingContext{TC.LocalContext{TC.TraceId{trace_id, False{}}, TC.SpanId{span_id}, True{}}, state}:
+      ({==}, {==})
+    case TC.OutgoingContext{TC.LocalContext{TC.TraceId{trace_id, True{}}, TC.SpanId{span_id}, False{}}, state}:
+      ({==}, {==})
+    case TC.OutgoingContext{TC.LocalContext{TC.TraceId{trace_id, True{}}, TC.SpanId{span_id}, True{}}, state}:
+      ({==}, {==})
+
+# By computation in each of the four combinations, once the incoming
+# context, its remote context and its trace ID are opened.
+def Laws.remote_flags(incoming):
+  match incoming:
+    case TC.IncomingContext{TC.RemoteContext{TC.TraceId{trace_id, False{}}, span_id, False{}}, state, received}:
+      {==}
+    case TC.IncomingContext{TC.RemoteContext{TC.TraceId{trace_id, False{}}, span_id, True{}}, state, received}:
+      {==}
+    case TC.IncomingContext{TC.RemoteContext{TC.TraceId{trace_id, True{}}, span_id, False{}}, state, received}:
+      {==}
+    case TC.IncomingContext{TC.RemoteContext{TC.TraceId{trace_id, True{}}, span_id, True{}}, state, received}:
+      {==}
+
+# By computation in each variant and each of the four combinations: the
+# flags compute to 0, 1, 2 or 3, and the comparison with 3 to True{}.
+def Laws.flags_bounded(context):
+  match context:
+    case Api.RemoteSpanContext{TC.IncomingContext{TC.RemoteContext{TC.TraceId{trace_id, False{}}, span_id, False{}},
+      state, received}}:
+      {==}
+    case Api.RemoteSpanContext{TC.IncomingContext{TC.RemoteContext{TC.TraceId{trace_id, False{}}, span_id, True{}},
+      state, received}}:
+      {==}
+    case Api.RemoteSpanContext{TC.IncomingContext{TC.RemoteContext{TC.TraceId{trace_id, True{}}, span_id, False{}},
+      state, received}}:
+      {==}
+    case Api.RemoteSpanContext{TC.IncomingContext{TC.RemoteContext{TC.TraceId{trace_id, True{}}, span_id, True{}},
+      state, received}}:
+      {==}
+    case Api.LocalSpanContext{TC.OutgoingContext{TC.LocalContext{TC.TraceId{trace_id, False{}}, span_id, False{}}, state}}:
+      {==}
+    case Api.LocalSpanContext{TC.OutgoingContext{TC.LocalContext{TC.TraceId{trace_id, False{}}, span_id, True{}}, state}}:
+      {==}
+    case Api.LocalSpanContext{TC.OutgoingContext{TC.LocalContext{TC.TraceId{trace_id, True{}}, span_id, False{}}, state}}:
+      {==}
+    case Api.LocalSpanContext{TC.OutgoingContext{TC.LocalContext{TC.TraceId{trace_id, True{}}, span_id, True{}}, state}}:
+      {==}
+
+# By computation: each reader matches the constructors the parts were put
+# in, and the wrapped incoming context is the one the constructor built.
+def Laws.parts_readers(trace_id, span_id, sampled, state):
+  ({==}, ({==}, ({==}, ({==}, ({==}, {==})))))
+
+# By computation in each of the four combinations, once the trace ID is
+# opened for its randomness assertion.
+def Laws.parts_flags(trace_id, span_id, sampled, state):
+  match trace_id sampled:
+    case TC.TraceId{digits, False{}} False{}:
+      {==}
+    case TC.TraceId{digits, False{}} True{}:
+      {==}
+    case TC.TraceId{digits, True{}} False{}:
+      {==}
+    case TC.TraceId{digits, True{}} True{}:
+      {==}
+
+# By computation: the incoming context built from parts keeps no received
+# pair, which is what forwarding looks for first.
+def Laws.parts_not_forwarded(trace_id, span_id, sampled, state, limits, carrier):
   ({==}, {==})
 
 # 9. Context
