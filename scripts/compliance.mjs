@@ -125,6 +125,14 @@ function parseYaml(text, file) {
     return parts.join(' ');
   }
 
+  // The key on the current line, a line of a mapping whose keys are indented
+  // by `indent`, and the text after it.
+  function keyAt(indent) {
+    const match = KEY.exec(lines[index].slice(indent));
+    if (!match) fail(index, 'is not a key with its value; a list is indented below its key');
+    return { key: match[1], rest: (match[2] ?? '').trim() };
+  }
+
   // The keys and values of a mapping whose keys are indented by `indent`.
   function mapping(indent) {
     const result = {};
@@ -133,10 +141,7 @@ function parseYaml(text, file) {
       skipBlank();
       if (index >= lines.length || indentOf(lines[index]) < indent) return result;
       if (indentOf(lines[index]) > indent) fail(index, 'is indented more than the keys before it');
-      const match = KEY.exec(lines[index].slice(indent));
-      if (!match) fail(index, 'is not a key with its value; a list is indented below its key');
-      const key = match[1];
-      const rest = (match[2] ?? '').trim();
+      const { key, rest } = keyAt(indent);
       if (Object.hasOwn(result, key)) fail(index, `repeats the key ${key}`);
       if (rest === '' || rest.startsWith('#')) {
         index += 1;
@@ -270,16 +275,20 @@ function matrixOf(document, file, problems, keys) {
   return { rows: reader.rows, sections };
 }
 
+// The keys of this project that a row may hold, in alphabetical order.
+const PROJECT_KEYS = ['note', 'partial', 'reason', 'ticket'];
+
+// The keys that the status file allows at each level.
 const STATUS_KEYS = {
   file: ['specification', 'sections'],
   section: ['name', 'features'],
   heading: ['heading', 'features'],
-  row: ['name', 'status', 'note', 'partial', 'ticket', 'reason'],
+  row: ['name', 'status', ...PROJECT_KEYS],
 };
 
 // For each status of the specification's legend, the classification of a
-// row by the keys it holds beside its name and status, sorted and joined by
-// spaces, and the problem of a row that holds other keys.
+// row by the keys of this project it holds, in the order of PROJECT_KEYS and
+// joined by spaces, and the problem of a row that holds other keys.
 const LEGEND = {
   '+': {
     byKeys: { '': 'implemented', note: 'implemented' },
@@ -318,7 +327,7 @@ function classify(row) {
         : `has the status '${row.status}', which is not one of '+', '-' and 'N/A'`,
     };
   }
-  const keys = Object.keys(row).filter((key) => key !== 'name' && key !== 'status').sort().join(' ');
+  const keys = PROJECT_KEYS.filter((key) => Object.hasOwn(row, key)).join(' ');
   const status = Object.hasOwn(legend.byKeys, keys) ? legend.byKeys[keys] : undefined;
   if (status === undefined) return { problem: legend.problem };
   const problem = valuesProblem(row);
@@ -446,25 +455,33 @@ function introduction(revision) {
   ];
 }
 
-// The table of a section: a bold line for each heading, and for each row its
-// name, its Optional mark unless the section hides the column, its status,
-// its ticket and its note.
+// The line of a heading in a section's table of `columns` columns: the
+// heading in bold, and empty cells.
+function headingLine(text, columns, revision) {
+  const heading = fromTemplate(text, revision);
+  const bold = heading.startsWith('**') && heading.endsWith('**') ? heading : `**${heading}**`;
+  return `| ${[cell(bold), ...columns.slice(1).map(() => '')].join(' | ')} |`;
+}
+
+// The line of a row in a section's table: its name, its Optional mark when
+// the section shows the column, its status, its ticket and its note.
+function rowLine(item, optional, revision, classified) {
+  const { status, ticket, text } = classified.get(identityOf(item));
+  const mark = optional ? [cell(optionalMark(item.row))] : [];
+  const link = ticket ? `[#${ticket}](${ISSUES}${ticket})` : '';
+  const note = text === undefined ? '' : cell(fromStatus(text));
+  return `| ${[cell(fromTemplate(item.name, revision)), ...mark, status, link, note].join(' | ')} |`;
+}
+
+// The table of a section: a line for each heading and each row.
 function sectionTable(section, revision, classified) {
   const optional = !section.hideOptional;
   const columns = ['Feature', ...(optional ? ['Optional'] : []), 'Status', 'Ticket', 'Note'];
   const lines = ['', `## ${section.name}`, '', `| ${columns.join(' | ')} |`,
     `| ${columns.map(() => '---').join(' | ')} |`];
   for (const item of section.items) {
-    if (item.kind === 'heading') {
-      const heading = fromTemplate(item.text, revision);
-      const bold = heading.startsWith('**') && heading.endsWith('**') ? heading : `**${heading}**`;
-      lines.push(`| ${[cell(bold), ...columns.slice(1).map(() => '')].join(' | ')} |`);
-    } else {
-      const { status, ticket, text } = classified.get(identityOf(item));
-      const cells = [cell(fromTemplate(item.name, revision)), ...(optional ? [cell(optionalMark(item.row))] : []),
-        status, ticket ? `[#${ticket}](${ISSUES}${ticket})` : '', cell(text === undefined ? '' : fromStatus(text))];
-      lines.push(`| ${cells.join(' | ')} |`);
-    }
+    if (item.kind === 'heading') lines.push(headingLine(item.text, columns, revision));
+    else lines.push(rowLine(item, optional, revision, classified));
   }
   return lines;
 }
