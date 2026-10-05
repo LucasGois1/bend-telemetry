@@ -17,6 +17,8 @@
 #   no_reason       a row that does not apply gives no reason;
 #   revision        the status file names another revision of the
 #                   specification;
+#   malformed       the status file leaves the YAML that the check reads,
+#                   which it reports with the file and the line;
 #   stale           a status changed and COMPLIANCE.md was not regenerated;
 #   edited          COMPLIANCE.md was edited by hand.
 #
@@ -139,7 +141,10 @@ add_baggage_row() {
   mv "$add_file.new" "$add_file"
 }
 
-row='Traces > TracerProvider > Create TracerProvider'
+# The row that the cases rewrite, the first of the template, and its place in
+# the check's messages.
+first_row='Create TracerProvider'
+row="Traces > TracerProvider > $first_row"
 
 # The committed files pass.
 run_status=0
@@ -152,7 +157,7 @@ else
 fi
 
 scratch unclassified
-rewrite_row "$evidence_dir/unclassified/$status_file" 'Create TracerProvider'
+rewrite_row "$evidence_dir/unclassified/$status_file" "$first_row"
 expect unclassified "$status_file does not classify the row $row of the template"
 
 scratch template_row
@@ -165,23 +170,27 @@ add_baggage_row "$evidence_dir/extra_row/$status_file" '      - name: A row that
 expect extra_row "classifies the row Baggage > A row that the template lacks, which the template does not have"
 
 scratch unknown_status
-rewrite_row "$evidence_dir/unknown_status/$status_file" 'Create TracerProvider' "status: '?'"
+rewrite_row "$evidence_dir/unknown_status/$status_file" "$first_row" "status: '?'"
 expect unknown_status "$row: has the status '?', which is not one of '+', '-' and 'N/A'"
 
 scratch no_ticket
-rewrite_row "$evidence_dir/no_ticket/$status_file" 'Create TracerProvider' "status: '-'"
-expect no_ticket "$row: is not implemented ('-') and names neither its ticket nor the reason it does not apply"
+rewrite_row "$evidence_dir/no_ticket/$status_file" "$first_row" "status: '-'"
+expect no_ticket "$row: is not implemented ('-'): it takes its ticket, with a partial when part of the row holds, or the reason it does not apply"
 
 scratch no_reason
-rewrite_row "$evidence_dir/no_reason/$status_file" 'Create TracerProvider' "status: 'N/A'"
-expect no_reason "$row: does not apply ('N/A') and gives no reason"
+rewrite_row "$evidence_dir/no_reason/$status_file" "$first_row" "status: 'N/A'"
+expect no_reason "$row: does not apply ('N/A'): it takes the reason, and no ticket, partial or note"
 
 scratch revision
 sed 's/^specification: .*$/specification: v0.0.0/' "$status_file" > "$evidence_dir/revision/$status_file"
 expect revision "$status_file names the specification v0.0.0"
 
+scratch malformed
+rewrite_row "$evidence_dir/malformed/$status_file" "$first_row" "status: '+'" 'note: A note: with a colon.'
+expect malformed "FAIL: $status_file:" "a plain value cannot hold ': ', ' #' or a final ':'"
+
 scratch stale
-rewrite_row "$evidence_dir/stale/$status_file" 'Create TracerProvider' "status: '-'" 'ticket: 999999'
+rewrite_row "$evidence_dir/stale/$status_file" "$first_row" "status: '-'" 'ticket: 999999'
 expect stale "FAIL: $document differs from the document generated from $status_file"
 
 scratch edited
@@ -203,7 +212,7 @@ fi
 
 # Generation from a status file with a problem fails and writes nothing.
 scratch generate_refused
-rewrite_row "$evidence_dir/generate_refused/$status_file" 'Create TracerProvider'
+rewrite_row "$evidence_dir/generate_refused/$status_file" "$first_row"
 printf 'A document that generation must leave alone.\n' > "$evidence_dir/generate_refused/$document"
 run generate_refused
 if [ "$run_status" -ne 1 ]; then

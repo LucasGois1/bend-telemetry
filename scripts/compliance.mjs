@@ -33,11 +33,11 @@
 // whose items are scalars or mappings; plain scalars, which may continue on
 // lines indented below their key; single-quoted scalars, which may span lines
 // the same way; and comments on lines of their own or after a key whose value
-// starts on the next line. `true` and `false` are Booleans, a key with no
-// value holds null, and every other scalar is text. Anything else, such as a
-// tab, a flow collection, an anchor, a tag, a block scalar, a double-quoted
-// scalar, a plain scalar holding ': ' or ' #', or a repeated key, is an error
-// that names the file and the line.
+// starts on the next line. Every scalar is text, `true` included, and a key
+// with no value holds null. Anything else, such as a tab, a flow collection,
+// an anchor, a tag, a block scalar, a double-quoted scalar, a plain scalar
+// holding ': ' or ' #', or a repeated key, is an error that names the file
+// and the line.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -48,7 +48,18 @@ const USAGE = 'Usage: node scripts/compliance.mjs REVISION TEMPLATE STATUS OUTPU
 // The line on which each mapping that parseYaml answers starts.
 const lineOf = new WeakMap();
 
-const KEY = /^([A-Za-z_][A-Za-z0-9_]*):(?: +(.*))?$/;
+// A key and the text after it, if any, on a line of a mapping.
+const KEY = /^([A-Za-z_]\w*):(?: (.*))?$/;
+
+// The position of the quote that closes a single-quoted text, or -1: a
+// doubled quote is a quote of the text.
+function closingQuote(text) {
+  for (let at = 0; at < text.length; at += 1) {
+    if (text[at] === "'" && text[at + 1] === "'") at += 1;
+    else if (text[at] === "'") return at;
+  }
+  return -1;
+}
 
 // The value of a YAML text of the subset above; `file` names it in errors.
 function parseYaml(text, file) {
@@ -65,16 +76,6 @@ function parseYaml(text, file) {
   const skipBlank = () => {
     while (index < lines.length && isBlank(lines[index])) index += 1;
   };
-
-  // The position of the quote that closes a single-quoted text, or -1: a
-  // doubled quote is a quote of the text.
-  function closingQuote(text) {
-    for (let at = 0; at < text.length; at += 1) {
-      if (text[at] === "'" && text[at + 1] === "'") at += 1;
-      else if (text[at] === "'") return at;
-    }
-    return -1;
-  }
 
   // A single-quoted scalar whose text after the opening quote is `rest`, on
   // the current line; it continues on lines indented more than `parent`, and
@@ -117,12 +118,11 @@ function parseYaml(text, file) {
       index += 1;
     }
     parts.forEach((part, at) => {
-      if (/: | #|:$/.test(part)) {
+      if (part.includes(': ') || part.includes(' #') || part.endsWith(':')) {
         fail(start + at, "a plain value cannot hold ': ', ' #' or a final ':'; quote it with single quotes");
       }
     });
-    const value = parts.join(' ');
-    return value === 'true' || value === 'false' ? value === 'true' : value;
+    return parts.join(' ');
   }
 
   // The keys and values of a mapping whose keys are indented by `indent`.
@@ -135,7 +135,8 @@ function parseYaml(text, file) {
       if (indentOf(lines[index]) > indent) fail(index, 'is indented more than the keys before it');
       const match = KEY.exec(lines[index].slice(indent));
       if (!match) fail(index, 'is not a key with its value; a list is indented below its key');
-      const [, key, rest = ''] = match;
+      const key = match[1];
+      const rest = (match[2] ?? '').trim();
       if (Object.hasOwn(result, key)) fail(index, `repeats the key ${key}`);
       if (rest === '' || rest.startsWith('#')) {
         index += 1;
@@ -191,8 +192,9 @@ const isMapping = (value) => value !== null && typeof value === 'object' && !Arr
 // A file and the line where a mapping of it starts, for messages.
 const placeOf = (file, value) => (isMapping(value) && lineOf.has(value) ? `${file}:${lineOf.get(value)}` : file);
 
-// A heading as plain text: its links and emphasis dropped.
-const plain = (text) => text.replaceAll('**', '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+// A heading as plain text: its emphasis dropped, and each link replaced by
+// its text.
+const plain = (text) => text.replaceAll('**', '').replace(/\[([^[\]]*)\]\([^()]*\)/g, '$1');
 
 // A row's place in the matrix, for messages: its section, its heading as
 // plain text if it has one, and its name.
@@ -201,59 +203,71 @@ const labelOf = ({ section, heading, name }) => [section, heading === null ? nul
 
 const identityOf = ({ section, heading, name }) => JSON.stringify([section, heading, name]);
 
+// The reading of a matrix file: the file's name, the keys allowed at each
+// level when the file is the status file, the problems found, and the rows
+// read so far.
+const readerOf = (file, problems, keys) => ({ file, problems, keys, rows: [] });
+
+// A mapping of the file at a level, `file`, `section`, `heading` or `row`,
+// whose keys the reader checks when it has keys to allow.
+function checkKeys(reader, value, level) {
+  const unknown = reader.keys ? Object.keys(value).filter((key) => !reader.keys[level].includes(key)) : [];
+  if (unknown.length > 0) {
+    reader.problems.push(`${placeOf(reader.file, value)}: has the key ${unknown[0]}; `
+      + `a ${level} has the keys ${reader.keys[level].join(', ')}`);
+  }
+}
+
+// A row of a section, under a heading or null, added to the rows and to the
+// section's items.
+function readRow(reader, section, heading, row, items) {
+  if (!isMapping(row) || typeof row.name !== 'string') {
+    reader.problems.push(`${placeOf(reader.file, row)}: a row of ${section} has a name`);
+    return;
+  }
+  checkKeys(reader, row, 'row');
+  const entry = { kind: 'row', section, heading, name: row.name, row };
+  reader.rows.push(entry);
+  items.push(entry);
+}
+
+// A feature of a section: a row, or a heading with its rows.
+function readFeature(reader, section, feature, items) {
+  if (!isMapping(feature) || !Object.hasOwn(feature, 'features')) {
+    readRow(reader, section, null, feature, items);
+  } else if (typeof feature.heading !== 'string' || !Array.isArray(feature.features)) {
+    reader.problems.push(`${placeOf(reader.file, feature)}: a heading of ${section} has a text and a list of features`);
+  } else {
+    checkKeys(reader, feature, 'heading');
+    items.push({ kind: 'heading', text: feature.heading });
+    for (const row of feature.features) readRow(reader, section, feature.heading, row, items);
+  }
+}
+
 // A parsed matrix file, a template or a status file: its rows in order, each
 // with its section, its heading (null for a row outside a heading), its name
 // and its mapping; and its sections, each with its headings and rows in
 // order, for rendering. `keys`, when given, lists the keys allowed at each
 // level. The problems go to `problems`.
 function matrixOf(document, file, problems, keys) {
-  const rows = [];
+  const reader = readerOf(file, problems, keys);
   const sections = [];
-  const allowed = (value, level) => {
-    const unknown = keys ? Object.keys(value).filter((key) => !keys[level].includes(key)) : [];
-    if (unknown.length > 0) {
-      problems.push(`${placeOf(file, value)}: has the key ${unknown[0]}; `
-        + `a ${level} has the keys ${keys[level].join(', ')}`);
-    }
-  };
   if (!isMapping(document) || !Array.isArray(document.sections)) {
     problems.push(`${file}: is not a mapping with a list of sections`);
-    return { rows, sections };
+    return { rows: reader.rows, sections };
   }
-  allowed(document, 'file');
-  const addRow = (section, heading, row, items) => {
-    if (!isMapping(row) || typeof row.name !== 'string') {
-      problems.push(`${placeOf(file, row)}: a row of ${section} has a name`);
-      return;
-    }
-    allowed(row, 'row');
-    const entry = { kind: 'row', section, heading, name: row.name, row };
-    rows.push(entry);
-    items.push(entry);
-  };
+  checkKeys(reader, document, 'file');
   for (const section of document.sections) {
     if (!isMapping(section) || typeof section.name !== 'string' || !Array.isArray(section.features)) {
       problems.push(`${placeOf(file, section)}: a section has a name and a list of features`);
       continue;
     }
-    allowed(section, 'section');
+    checkKeys(reader, section, 'section');
     const items = [];
-    sections.push({ name: section.name, hideOptional: section.hide_optional_column === true, items });
-    for (const feature of section.features) {
-      if (isMapping(feature) && Object.hasOwn(feature, 'features')) {
-        if (typeof feature.heading !== 'string' || !Array.isArray(feature.features)) {
-          problems.push(`${placeOf(file, feature)}: a heading of ${section.name} has a text and a list of features`);
-          continue;
-        }
-        allowed(feature, 'heading');
-        items.push({ kind: 'heading', text: feature.heading });
-        for (const row of feature.features) addRow(section.name, feature.heading, row, items);
-      } else {
-        addRow(section.name, null, feature, items);
-      }
-    }
+    sections.push({ name: section.name, hideOptional: section.hide_optional_column === 'true', items });
+    for (const feature of section.features) readFeature(reader, section.name, feature, items);
   }
-  return { rows, sections };
+  return { rows: reader.rows, sections };
 }
 
 const STATUS_KEYS = {
@@ -263,88 +277,101 @@ const STATUS_KEYS = {
   row: ['name', 'status', 'note', 'partial', 'ticket', 'reason'],
 };
 
-// The classification of a row of the status file, `{ status, ticket, text }`
-// for COMPLIANCE.md, or the text of its problem.
-function classify(row) {
-  const has = (key) => Object.hasOwn(row, key);
-  const holdsOnly = (...keys) => Object.keys(row).every((key) => ['name', 'status', ...keys].includes(key));
-  for (const key of ['note', 'partial', 'reason']) {
-    if (has(key) && (typeof row[key] !== 'string' || row[key] === '')) return `its ${key} is not a text`;
-  }
-  if (has('ticket') && !/^[1-9][0-9]*$/.test(String(row.ticket))) {
+// For each status of the specification's legend, the classification of a
+// row by the keys it holds beside its name and status, sorted and joined by
+// spaces, and the problem of a row that holds other keys.
+const LEGEND = {
+  '+': {
+    byKeys: { '': 'implemented', note: 'implemented' },
+    problem: "is implemented ('+'): it takes an optional note, and no ticket, partial or reason",
+  },
+  '-': {
+    byKeys: { ticket: 'pending', 'partial ticket': 'partial', reason: 'not applicable' },
+    problem: "is not implemented ('-'): it takes its ticket, with a partial when part of the row holds, "
+      + 'or the reason it does not apply',
+  },
+  'N/A': {
+    byKeys: { reason: 'not applicable' },
+    problem: "does not apply ('N/A'): it takes the reason, and no ticket, partial or note",
+  },
+};
+
+// The problem of a row's values, or '' when they hold: a note, a partial and
+// a reason are texts, and a ticket is an issue number.
+function valuesProblem(row) {
+  const empty = ['note', 'partial', 'reason'].find((key) => Object.hasOwn(row, key)
+    && (typeof row[key] !== 'string' || row[key] === ''));
+  if (empty) return `its ${empty} is not a text`;
+  if (Object.hasOwn(row, 'ticket') && !/^[1-9]\d*$/.test(String(row.ticket))) {
     return `its ticket ${row.ticket} is not an issue number`;
   }
-  switch (row.status) {
-    case '+':
-      if (!holdsOnly('note')) return "is implemented ('+'): it takes a note, and no ticket, partial or reason";
-      return { status: 'implemented', text: row.note };
-    case 'N/A':
-      if (!has('reason')) return "does not apply ('N/A') and gives no reason";
-      if (!holdsOnly('reason')) return "does not apply ('N/A'): it takes a reason, and no ticket, partial or note";
-      return { status: 'not applicable', text: row.reason };
-    case '-':
-      if (has('reason')) {
-        if (!holdsOnly('reason')) return "does not apply ('-' with a reason): it takes no ticket, partial or note";
-        return { status: 'not applicable', text: row.reason };
-      }
-      if (!has('ticket')) {
-        return "is not implemented ('-') and names neither its ticket nor the reason it does not apply";
-      }
-      if (!holdsOnly('ticket', 'partial')) return "is not implemented ('-'): it takes a ticket and a partial, and no note";
-      if (has('partial')) return { status: 'partial', ticket: row.ticket, text: row.partial };
-      return { status: 'pending', ticket: row.ticket };
-    case undefined:
-    case null:
-      return 'has no status';
-    default:
-      return `has the status '${row.status}', which is not one of '+', '-' and 'N/A'`;
-  }
+  return '';
 }
 
-// The classification of each row of the status file, by the row's identity;
-// the status file must classify the rows of the template, each once, in the
-// template's order, and no other. The problems go to `problems`.
-function classifyAll(template, templateFile, status, statusFile, problems) {
-  let matches = template.rows.length === status.rows.length;
-  const byIdentity = (rows, file) => {
-    const map = new Map();
-    for (const entry of rows) {
-      const identity = identityOf(entry);
-      if (map.has(identity)) {
-        problems.push(`${placeOf(file, entry.row)}: lists the row ${labelOf(entry)} twice`);
-        matches = false;
-      }
-      map.set(identity, entry);
-    }
-    return map;
-  };
-  const templateRows = byIdentity(template.rows, templateFile);
-  const statusRows = byIdentity(status.rows, statusFile);
+// The classification of a row of the status file for COMPLIANCE.md,
+// `{ status, ticket, text }`, or `{ problem }`.
+function classify(row) {
+  const legend = Object.hasOwn(LEGEND, row.status) ? LEGEND[row.status] : undefined;
+  if (legend === undefined) {
+    return {
+      problem: row.status === undefined || row.status === null ? 'has no status'
+        : `has the status '${row.status}', which is not one of '+', '-' and 'N/A'`,
+    };
+  }
+  const keys = Object.keys(row).filter((key) => key !== 'name' && key !== 'status').sort().join(' ');
+  const status = Object.hasOwn(legend.byKeys, keys) ? legend.byKeys[keys] : undefined;
+  if (status === undefined) return { problem: legend.problem };
+  const problem = valuesProblem(row);
+  if (problem) return { problem };
+  return { status, ticket: row.ticket, text: row.note ?? row.partial ?? row.reason };
+}
+
+// The rows of a matrix file by identity; a row listed twice is a problem.
+function rowsByIdentity(rows, file, problems) {
+  const map = new Map();
+  for (const entry of rows) {
+    const identity = identityOf(entry);
+    if (map.has(identity)) problems.push(`${placeOf(file, entry.row)}: lists the row ${labelOf(entry)} twice`);
+    map.set(identity, entry);
+  }
+  return map;
+}
+
+// The status file lists the rows of the template, each once, in the
+// template's order, and no other; each difference is a problem.
+function checkRows(template, templateFile, status, statusFile, problems) {
+  const before = problems.length;
+  const templateRows = rowsByIdentity(template.rows, templateFile, problems);
+  const statusRows = rowsByIdentity(status.rows, statusFile, problems);
   for (const [identity, entry] of templateRows) {
     if (!statusRows.has(identity)) {
       problems.push(`${statusFile} does not classify the row ${labelOf(entry)} of the template`);
-      matches = false;
     }
   }
   for (const [identity, entry] of statusRows) {
     if (!templateRows.has(identity)) {
       problems.push(`${placeOf(statusFile, entry.row)}: classifies the row ${labelOf(entry)}, `
         + 'which the template does not have');
-      matches = false;
     }
   }
-  if (matches) {
-    const at = status.rows.findIndex((entry, position) => identityOf(entry) !== identityOf(template.rows[position]));
-    if (at >= 0) {
-      problems.push(`${placeOf(statusFile, status.rows[at].row)}: lists the row ${labelOf(status.rows[at])} `
-        + `where the template has ${labelOf(template.rows[at])}; keep the template's order`);
-    }
+  if (problems.length > before) return;
+  const at = status.rows.findIndex((entry, position) => identityOf(entry) !== identityOf(template.rows[position]));
+  if (at >= 0) {
+    problems.push(`${placeOf(statusFile, status.rows[at].row)}: lists the row ${labelOf(status.rows[at])} `
+      + `where the template has ${labelOf(template.rows[at])}; keep the template's order`);
   }
+}
+
+// The classification of each row of the status file, by the row's identity,
+// once the status file classifies the rows of the template. The problems go
+// to `problems`.
+function classifyAll(template, templateFile, status, statusFile, problems) {
+  checkRows(template, templateFile, status, statusFile, problems);
   const classified = new Map();
-  for (const [identity, entry] of statusRows) {
+  for (const entry of status.rows) {
     const result = classify(entry.row);
-    if (typeof result === 'string') problems.push(`${placeOf(statusFile, entry.row)}: ${labelOf(entry)}: ${result}`);
-    else classified.set(identity, result);
+    if (result.problem) problems.push(`${placeOf(statusFile, entry.row)}: ${labelOf(entry)}: ${result.problem}`);
+    else classified.set(identityOf(entry), result);
   }
   return classified;
 }
@@ -352,7 +379,7 @@ function classifyAll(template, templateFile, status, statusFile, problems) {
 const STATUSES = ['implemented', 'partial', 'pending', 'not applicable'];
 
 // A text in a table cell.
-const cell = (text) => (text ?? '').replaceAll('|', '\\|');
+const cell = (text) => (text ?? '').replaceAll('|', String.raw`\|`);
 
 // The template's text, its links into the specification's repository made
 // absolute at the revision.
@@ -362,16 +389,26 @@ const fromTemplate = (text, revision) =>
 // A note of the status file, its references to this project's issues, such
 // as (#12), linked; a reference into another repository, such as
 // bendlang/bend#1162, is left as it is.
-const fromStatus = (text) => text.replace(/(^|[^\w/&#[])#([1-9][0-9]*)\b/g, `$1[#$2](${ISSUES}$2)`);
+const fromStatus = (text) => text.replace(/(^|[^\w/&#[])#([1-9]\d*)\b/g, `$1[#$2](${ISSUES}$2)`);
 
 const countsOf = (entries, classified) =>
   STATUSES.map((name) => entries.filter((entry) => classified.get(identityOf(entry)).status === name).length);
 
-// COMPLIANCE.md: the legend, the counts of each section and a table per
-// section of the template.
-function render(revision, template, classified) {
+// The specification's Optional mark of a template row: X when the row is
+// optional, * when at least one row of its group is required, or the
+// condition that the template gives.
+function optionalMark(row) {
+  if (row.optional === 'true') return 'X';
+  if (row.optional_one_of_group_is_required === 'true') return '*';
+  if (typeof row.optional === 'string' && row.optional !== 'false') return row.optional;
+  return '';
+}
+
+// The opening of COMPLIANCE.md: what it is, the legend and the summary's
+// header.
+function introduction(revision) {
   const matrix = `${SPECIFICATION}/blob/${revision}/spec-compliance-matrix.md`;
-  const lines = [
+  return [
     '# Compliance',
     '',
     '<!-- Generated by ./scripts/compliance.sh from qualification/compliance/bend.yaml: edit that file and regenerate'
@@ -407,32 +444,41 @@ function render(revision, template, classified) {
     '| Section | Implemented | Partial | Pending | Not applicable |',
     '| --- | --- | --- | --- | --- |',
   ];
+}
+
+// The table of a section: a bold line for each heading, and for each row its
+// name, its Optional mark unless the section hides the column, its status,
+// its ticket and its note.
+function sectionTable(section, revision, classified) {
+  const optional = !section.hideOptional;
+  const columns = ['Feature', ...(optional ? ['Optional'] : []), 'Status', 'Ticket', 'Note'];
+  const lines = ['', `## ${section.name}`, '', `| ${columns.join(' | ')} |`,
+    `| ${columns.map(() => '---').join(' | ')} |`];
+  for (const item of section.items) {
+    if (item.kind === 'heading') {
+      const heading = fromTemplate(item.text, revision);
+      const bold = heading.startsWith('**') && heading.endsWith('**') ? heading : `**${heading}**`;
+      lines.push(`| ${[cell(bold), ...columns.slice(1).map(() => '')].join(' | ')} |`);
+    } else {
+      const { status, ticket, text } = classified.get(identityOf(item));
+      const cells = [cell(fromTemplate(item.name, revision)), ...(optional ? [cell(optionalMark(item.row))] : []),
+        status, ticket ? `[#${ticket}](${ISSUES}${ticket})` : '', cell(text === undefined ? '' : fromStatus(text))];
+      lines.push(`| ${cells.join(' | ')} |`);
+    }
+  }
+  return lines;
+}
+
+// COMPLIANCE.md: the introduction and legend, the counts of each section and
+// a table per section of the template.
+function render(revision, template, classified) {
+  const lines = introduction(revision);
   for (const section of template.sections) {
     const rows = section.items.filter((item) => item.kind === 'row');
     lines.push(`| ${section.name} | ${countsOf(rows, classified).join(' | ')} |`);
   }
   lines.push(`| All | ${countsOf(template.rows, classified).join(' | ')} |`);
-  for (const section of template.sections) {
-    const optional = !section.hideOptional;
-    const columns = ['Feature', ...(optional ? ['Optional'] : []), 'Status', 'Ticket', 'Note'];
-    lines.push('', `## ${section.name}`, '', `| ${columns.join(' | ')} |`,
-      `| ${columns.map(() => '---').join(' | ')} |`);
-    for (const item of section.items) {
-      if (item.kind === 'heading') {
-        const heading = fromTemplate(item.text, revision);
-        const bold = heading.startsWith('**') && heading.endsWith('**') ? heading : `**${heading}**`;
-        lines.push(`| ${[cell(bold), ...columns.slice(1).map(() => '')].join(' | ')} |`);
-        continue;
-      }
-      const { status, ticket, text } = classified.get(identityOf(item));
-      const marker = item.row.optional === true ? 'X'
-        : item.row.optional_one_of_group_is_required === true ? '*'
-          : typeof item.row.optional === 'string' ? item.row.optional : '';
-      const link = ticket ? `[#${ticket}](${ISSUES}${ticket})` : '';
-      lines.push(`| ${[cell(fromTemplate(item.name, revision)), ...(optional ? [cell(marker)] : []), status, link,
-        cell(text === undefined ? '' : fromStatus(text))].join(' | ')} |`);
-    }
-  }
+  for (const section of template.sections) lines.push(...sectionTable(section, revision, classified));
   return `${lines.join('\n')}\n`;
 }
 

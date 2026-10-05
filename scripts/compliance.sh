@@ -66,10 +66,11 @@ else
 fi
 digest_of() {
   # digest_of FILE: the SHA-256 of a file, as 64 hex digits.
+  digest_file=$1
   if [ "$hash_command" = sha256sum ]; then
-    sha256sum "$1" | cut -d ' ' -f 1
+    sha256sum "$digest_file" | cut -d ' ' -f 1
   else
-    shasum -a 256 "$1" | cut -d ' ' -f 1
+    shasum -a 256 "$digest_file" | cut -d ' ' -f 1
   fi
 }
 
