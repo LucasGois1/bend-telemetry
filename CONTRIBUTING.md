@@ -118,11 +118,12 @@ another package of this repository by a relative path.
 
 `./scripts/local-hub.sh COMMAND` starts a local BendHub (`scripts/hub.mjs`),
 publishes every package of the working tree to it with the compiler's own
-`--publish`, names each `bend-telemetry-<role>@X.Y.Z.0` (X.Y.Z being
-`VERSION` without `-dev`), and runs the command with `BEND_HUB`, `BEND_LIB`
-and `HOME` pointing at the hub, a fresh cache and a scratch home, so that
-nothing touches `~/.bend`. Packages the working tree imports are relayed from
-the real hub. For example:
+`--publish`, in dependency order (a package goes after the packages of this
+repository that its manifest declares), names each
+`bend-telemetry-<role>@X.Y.Z.0` (X.Y.Z being `VERSION` without `-dev`), and
+runs the command with `BEND_HUB`, `BEND_LIB` and `HOME` pointing at the hub, a
+fresh cache and a scratch home, so that nothing touches `~/.bend`. Packages
+the working tree imports are relayed from the real hub. For example:
 
 ```sh
 ./scripts/local-hub.sh ./bend tests/consumer/main.bend

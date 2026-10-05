@@ -27,3 +27,5 @@
 consumer     tests/consumer/main.bend        tests/consumer/expected.txt             native,javascript,node
 readme-bend  README.md#readme-bend           README.md#readme-bend-output            native,javascript,node
 sdk-config   tests/consumer/sdk_config.bend  tests/consumer/sdk_config.expected.txt  native,javascript
+http-core    tests/consumer/http_core.bend   tests/consumer/http_core.expected.txt   native,javascript,node
+http-config  tests/consumer/http_config.bend tests/consumer/http_config.expected.txt native,javascript

@@ -1,0 +1,5 @@
+package: bend-telemetry-instrumentation-http
+known methods: GET,POST,PURGE
+methods: known PURGE | known GET | _OTHER from DELETE
+span name: HTTP /items/:id
+pinned: CONNECT,DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT,TRACE,QUERY

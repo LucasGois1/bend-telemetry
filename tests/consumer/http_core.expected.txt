@@ -1,0 +1,24 @@
+package: bend-telemetry-instrumentation-http
+known methods: CONNECT, DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT, TRACE, QUERY
+methods: known GET | _OTHER from GeT | _OTHER from ACL | under ACL,PURGE: known ACL | _OTHER from GET
+span names: GET /users/:id | GET | HTTP /users/:id | HTTP
+server status: 200 unset None | 404 unset None | 500 error '' Some(500) | 503 error '' Some(503)
+client status: 200 unset None | 404 error '' Some(404) | 500 error '' Some(500) | ErrDns error 'no such host' Some(ErrDns)
+url.full: https://REDACTED:REDACTED@example.com:8443/items?X-Amz-Signature=REDACTED&sig=REDACTED&sigma=1&sig&page=2#top
+url.full plain: http://example.com/?email=a@b.example&Signature=REDACTED
+url.full override: https://example.com/?token=REDACTED&sig=2
+target: url.path='/users/42', url.query='sig=REDACTED&x=1' | url.path='/ping'
+server proxied: http.request.method='GET', url.path='/users/42', url.query='sig=REDACTED&x=1', url.scheme='https', server.address='example.com', server.port=8443, client.address='192.0.2.60', user_agent.original='curl/8.4.0', http.route='/users/:id'
+server x-forwarded: http.request.method='_OTHER', http.request.method_original='get', url.path='/search', url.query='q=bend', url.scheme='https', server.address='example.com', client.address='203.0.113.5'
+server plain, capturing: http.request.method='POST', url.path='/ping', url.scheme='http', server.address='2001:db8::1', server.port=8080, user_agent.original='curl/8.4.0', http.request.header.accept=['text/html', 'application/json'], http.request.body.size=12
+server response 503: http.response.status_code=503, error.type='503'
+server response 200, capturing: http.response.status_code=200, http.response.header.content-type=['text/plain'], http.response.body.size=7
+client request: http.request.method='_OTHER', http.request.method_original='get', url.full='https://REDACTED:REDACTED@api.example.com/v1/items?sig=REDACTED&page=2', server.address='api.example.com', server.port=443
+client request, default port: http.request.method='GET', url.full='http://[::1]/health', server.address='::1', server.port=80, http.request.header.accept=['application/json'], http.request.body.size=0
+client response 200: http.response.status_code=200
+client response 404, capturing: http.response.status_code=404, error.type='404', http.response.header.content-type=['text/html'], http.response.body.size=9
+client failure: error.type='ErrDns'
+from map: accept: text/html; accept: application/json; host: example.com
+body size: 12 | 5
+config: known CONNECT,DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT,TRACE,QUERY; keys X-Amz-Signature,X-Amz-Credential,X-Amz-Security-Token,AWSAccessKeyId,Signature,sig,X-Goog-Signature; capture request Accept, response Content-Type, body sizes True
+from variables: GET,POST | CONNECT,DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT,TRACE,QUERY
