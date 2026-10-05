@@ -13,13 +13,18 @@ import bend-telemetry-semconv@0.1.0.0/semconv.bend as Semconv
 # and bytes, attribute collections with span limits at work, and timestamps.
 # Then span contexts (#5): a local one from literal identifiers through
 # bend-trace-context's pure constructors, a remote one extracted from a
-# carrier with the W3C examples of traceparent and tracestate, and a child of
-# the remote one built from its value readers. Each prints every reader. Then
-# a context carries a span context, is copied, replaced, read and cleared.
-# Then spans (#6): the start options, a recording span built from the literal
-# identifiers with tight span limits, every pure operation applied to it with
-# the limits at work, its data printed, and a non-recording span that accepts
-# the same operations and keeps nothing. The payload type is Unit: the API
+# carrier with the W3C examples of traceparent and tracestate, a child of the
+# remote one built from its value readers, and a remote one built from parts
+# (#10): the literal identifiers, the trace ID asserted random, a sampled
+# indication and a parsed tracestate. Each prints every reader; one line
+# prints the trace flags of all four, and one what forwarding through
+# bend-trace-context answers for the extracted one and for the one built from
+# parts. Then a context carries a span context, is copied, replaced, read and
+# cleared. Then spans (#6): the start options, a recording span built from
+# the literal identifiers with tight span limits, every pure operation applied
+# to it with the limits at work, its link pointing at the span context built
+# from parts, its data printed, and a non-recording span that accepts the
+# same operations and keeps nothing. The payload type is Unit: the API
 # never inspects the payload. Last, the semantic conventions (#33): attribute
 # names, enumeration values and a deprecated name.
 
@@ -176,6 +181,34 @@ def child(parent: Maybe<&2, Api.SpanContext>, parsed_span: Result<&2, &2, TC.Err
     case _ _:
       None{}
 
+# The W3C example tracestate with its entries in the other order, parsed as a
+# tracestate.
+def tracestate() -> Result<&2, &2, TC.StateError, TC.TraceState>:
+  TC.TraceState.parse(TC.Limits.default(), "rojo=00f067aa0ba902b7,congo=t61rcWkgMzE")
+
+# A remote span context built from parts, as an SDK builds the span context
+# of a link or of a propagator of another format: the parsed identifiers, the
+# trace ID asserted random so that bit 1 of the flags is seen, the sampled
+# indication and the parsed tracestate. It is held in a one-element list,
+# empty when the parts did not parse, so that Bend's native backend keeps it
+# boxed between the steps of main: a fourth span context held directly, about
+# 50 registers, takes main past what the backend compiles (#60).
+def parts(parsed_trace: Result<&2, &2, TC.Error, TC.TraceId>, parsed_span: Result<&2, &2, TC.Error, TC.SpanId>,
+  parsed_state: Result<&2, &2, TC.StateError, TC.TraceState>) -> List<&2, Api.SpanContext>:
+  match parsed_trace parsed_span parsed_state:
+    case Done{trace} Done{span} Done{state}:
+      [Api.SpanContext.remote_from_parts(TC.TraceId.assert_random(trace), span, True{}, state)]
+    case _ _ _:
+      Nil{}
+
+# The span context a held list carries, if any.
+def first(held: List<&2, Api.SpanContext>) -> Maybe<&2, Api.SpanContext>:
+  match held:
+    case Con{context, rest}:
+      Some{context}
+    case Nil{}:
+      None{}
+
 # The readers of a span context on one line; "none" for an absent one.
 def describe(found: Maybe<&2, Api.SpanContext>) -> String:
   match found:
@@ -186,6 +219,41 @@ def describe(found: Maybe<&2, Api.SpanContext>) -> String:
         " sampled=" ++ Bool.show(Api.SpanContext.is_sampled(context)) ++ " tracestate=\"" ++
         TC.TraceState.format(Api.SpanContext.tracestate(context)) ++ "\" remote=" ++
         Bool.show(Api.SpanContext.is_remote(context))
+
+# The trace flags of a span context as a number; "none" for an absent one.
+def show_flags(found: Maybe<&2, Api.SpanContext>) -> String:
+  match found:
+    case None{}:
+      "none"
+    case Some{context}:
+      U32.show(Api.SpanContext.trace_flags(context))
+
+# What forwarding answered: how many fields the carrier written holds, or the
+# name of the error.
+def show_forward(result: Result<&2, &2, TC.ForwardError, List<&2, TC.Header>>) -> String:
+  match result:
+    case Done{carrier}:
+      Nat.show(List.length(&2, TC.Header, carrier)) ++ " fields"
+    case Fail{error}:
+      TC.ForwardError.show(error)
+
+# What forwarding the incoming context a span context wraps into an empty
+# carrier answers; "nothing received" for a local span context, which wraps
+# none.
+def forwarded(found: Maybe<&2, TC.IncomingContext>) -> String:
+  match found:
+    case Some{incoming}:
+      show_forward(TC.Context.forward(TC.Limits.default(), incoming, Nil{}))
+    case None{}:
+      "nothing received"
+
+# What forwarding a span context answers; "none" for an absent one.
+def forward_of(found: Maybe<&2, Api.SpanContext>) -> String:
+  match found:
+    case None{}:
+      "none"
+    case Some{context}:
+      forwarded(Api.SpanContext.incoming(context))
 
 # The decimal text of each byte, in order.
 def shown(bytes: List<&2, U32>) -> List<&2, String>:
@@ -665,6 +733,12 @@ def main() -> IO(Unit):
     IO.print("remote: " ++ describe(remote))
     IO.print("remote span_id bytes: " ++ span_id_bytes(remote))
     IO.print("child: " ++ describe(child(remote, span_id())))
+    # The span context built from parts is held in a one-element list (#60).
+    +parts : List<&2, Api.SpanContext> = parts(trace_id(), span_id(), tracestate())
+    IO.print("parts: " ++ describe(first(parts)))
+    IO.print("flags: local=" ++ show_flags(local) ++ " remote=" ++ show_flags(remote)
+      ++ " child=" ++ show_flags(child(remote, span_id())) ++ " parts=" ++ show_flags(first(parts)))
+    IO.print("forward: remote=" ++ forward_of(remote) ++ " parts=" ++ forward_of(first(parts)))
     # The context is Data: marked reusable, it is copied into each use below.
     +context : Api.Context = carrying(local)
     IO.print("context: " ++ describe(Api.Context.span_context(context)))
@@ -680,7 +754,7 @@ def main() -> IO(Unit):
       ++ ", sampled " ++ sampled_of(data_of(started)))
     +failed : List<&2, Api.Span<Unit>> = held_status(started, Api.Error{"upstream timed out"})
     IO.print("failed: " ++ held_summary(failed))
-    record("recorded", steps(linked(remote, [
+    record("recorded", steps(linked(first(parts), [
       Api.Attribute{"peer.service", Api.StringValue{"queue-service"}},
       Api.Attribute{"messaging.system", Api.StringValue{"kafka"}}])), failed)
     record("non-recording", steps(linked(remote, Nil{})), [Api.Span.non_recording(Unit, remote)])
